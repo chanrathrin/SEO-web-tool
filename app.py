@@ -10,6 +10,15 @@ except Exception:
 
 app = Flask(__name__)
 
+STOP_WORDS = {
+    "the", "a", "an", "and", "or", "but", "if", "then", "than", "for", "with",
+    "without", "to", "from", "of", "in", "on", "at", "by", "is", "are", "was",
+    "were", "be", "been", "being", "that", "this", "these", "those", "it",
+    "its", "as", "about", "into", "over", "after", "before", "through", "under",
+    "between", "during", "including", "until", "against", "among", "within",
+    "news", "update", "latest"
+}
+
 
 def clean_text(text):
     text = text.strip()
@@ -22,6 +31,14 @@ def clean_text(text):
 def split_paragraphs(text):
     paragraphs = [p.strip() for p in text.split("\n") if p.strip()]
     return paragraphs if paragraphs else [text]
+
+
+def split_sentences(text):
+    text = re.sub(r"\s+", " ", text).strip()
+    if not text:
+        return []
+    sentences = re.split(r'(?<=[.!?])\s+', text)
+    return [s.strip() for s in sentences if s.strip()]
 
 
 def smart_truncate(text, limit, add_ellipsis=False):
@@ -53,43 +70,187 @@ def smart_truncate(text, limit, add_ellipsis=False):
     return result
 
 
+def title_case_phrase(text):
+    words = text.split()
+    small_words = {"and", "or", "but", "for", "nor", "a", "an", "the", "as", "at", "by", "for", "from", "in", "into", "of", "on", "onto", "to", "with"}
+    out = []
+    for i, word in enumerate(words):
+        lower = word.lower()
+        if i != 0 and i != len(words) - 1 and lower in small_words:
+            out.append(lower)
+        else:
+            out.append(lower.capitalize())
+    return " ".join(out)
+
+
+def extract_keywords(text, limit=6):
+    words = re.findall(r"[A-Za-z0-9']+", text.lower())
+    freq = {}
+
+    for word in words:
+        if len(word) < 3 or word in STOP_WORDS:
+            continue
+        freq[word] = freq.get(word, 0) + 1
+
+    ranked = sorted(freq.items(), key=lambda x: (-x[1], x[0]))
+    return [word for word, _ in ranked[:limit]]
+
+
+def find_best_sentence(sentences, keywords):
+    if not sentences:
+        return ""
+
+    best_sentence = sentences[0]
+    best_score = -1
+
+    for sentence in sentences:
+        lower = sentence.lower()
+        score = 0
+
+        for kw in keywords:
+            if kw in lower:
+                score += 3
+
+        length = len(sentence)
+        if 60 <= length <= 180:
+            score += 2
+        elif 35 <= length <= 220:
+            score += 1
+
+        if score > best_score:
+            best_score = score
+            best_sentence = sentence
+
+    return best_sentence
+
+
 def extract_title(paragraphs):
-    if paragraphs:
-        first = re.sub(r"\s+", " ", paragraphs[0]).strip()
-        title = smart_truncate(first, 70, add_ellipsis=False)
-        return title if title else "SEO Article"
-    return "SEO Article"
+    if not paragraphs:
+        return "SEO Article"
+
+    first = re.sub(r"\s+", " ", paragraphs[0]).strip()
+    sentences = split_sentences(first)
+    candidate = sentences[0] if sentences else first
+
+    candidate = re.sub(r"^[\"'“”‘’\-–—:;\s]+", "", candidate).strip()
+    candidate = smart_truncate(candidate, 70, add_ellipsis=False)
+
+    return candidate if candidate else "SEO Article"
 
 
-def create_slug(title):
-    slug = title.lower()
+def create_focus_keyphrase(title, article):
+    keywords = extract_keywords(title + " " + article, limit=4)
+    if keywords:
+        phrase = " ".join(keywords[:3])
+        return title_case_phrase(phrase)
+    return title_case_phrase(smart_truncate(title, 50, add_ellipsis=False))
+
+
+def create_slug(title, focus_keyphrase=""):
+    base = focus_keyphrase if focus_keyphrase else title
+    slug = base.lower()
     slug = re.sub(r"[^a-z0-9\s-]", "", slug)
     slug = re.sub(r"\s+", "-", slug).strip("-")
+    slug = re.sub(r"-{2,}", "-", slug)
     return slug[:80]
 
 
-def create_meta_description(text):
-    text = re.sub(r"\s+", " ", text).strip()
-    return smart_truncate(text, 160, add_ellipsis=True)
-
-
 def create_intro(text):
-    words = text.split()
-    return " ".join(words[:80])
+    sentences = split_sentences(text)
+    if not sentences:
+        return smart_truncate(text, 220, add_ellipsis=True)
+
+    intro = " ".join(sentences[:2])
+    return smart_truncate(intro, 260, add_ellipsis=True)
 
 
-def create_h2_sections(paragraphs):
-    h2s = []
-    for i, p in enumerate(paragraphs[1:5], start=1):
-        words = p.split()
-        h2 = " ".join(words[:8]).strip()
-        if h2:
-            h2s.append(f"H2 {i}: {h2}")
+def create_seo_title(title, focus_keyphrase):
+    title = re.sub(r"\s+", " ", title).strip()
+    focus_keyphrase = re.sub(r"\s+", " ", focus_keyphrase).strip()
 
-    if not h2s:
-        h2s.append("H2 1: Main Article Details")
+    options = [
+        f"{title}",
+        f"{title} | {focus_keyphrase}",
+        f"{focus_keyphrase}: {title}",
+        f"{title} - Full Breakdown",
+        f"{focus_keyphrase} - Key Details"
+    ]
 
-    return h2s
+    for option in options:
+        if len(option) <= 60:
+            return option
+
+    return smart_truncate(title, 60, add_ellipsis=False)
+
+
+def create_meta_description(text, focus_keyphrase):
+    cleaned = re.sub(r"\s+", " ", text).strip()
+    sentences = split_sentences(cleaned)
+    keywords = extract_keywords(cleaned, limit=6)
+
+    best = find_best_sentence(sentences, keywords)
+    if not best:
+        best = cleaned
+
+    best = re.sub(r"\s+", " ", best).strip()
+
+    if focus_keyphrase and focus_keyphrase.lower() not in best.lower():
+        candidate = f"{focus_keyphrase}: {best}"
+        if len(candidate) <= 160:
+            best = candidate
+
+    return smart_truncate(best, 160, add_ellipsis=True)
+
+
+def create_h2_sections(paragraphs, focus_keyphrase):
+    candidates = []
+    keywords = extract_keywords(" ".join(paragraphs), limit=8)
+
+    for p in paragraphs[1:8]:
+        sentence = split_sentences(p)
+        candidate = sentence[0] if sentence else p
+        candidate = re.sub(r"\s+", " ", candidate).strip()
+        candidate = smart_truncate(candidate, 55, add_ellipsis=False)
+
+        if not candidate:
+            continue
+
+        score = 0
+        lower = candidate.lower()
+
+        for kw in keywords:
+            if kw in lower:
+                score += 2
+
+        if focus_keyphrase.lower() in lower:
+            score += 2
+
+        if 20 <= len(candidate) <= 55:
+            score += 2
+
+        candidates.append((score, title_case_phrase(candidate)))
+
+    candidates = sorted(candidates, key=lambda x: -x[0])
+    unique = []
+    seen = set()
+
+    for _, cand in candidates:
+        key = cand.lower()
+        if key not in seen:
+            seen.add(key)
+            unique.append(cand)
+        if len(unique) == 4:
+            break
+
+    if not unique:
+        unique = [
+            f"{focus_keyphrase} Overview",
+            "Key Details and Background",
+            "Main Developments",
+            "What Happens Next"
+        ]
+
+    return [f"H2 {i + 1}: {h2}" for i, h2 in enumerate(unique)]
 
 
 def format_body(paragraphs):
@@ -97,8 +258,8 @@ def format_body(paragraphs):
     for p in paragraphs:
         words = p.split()
         lines = []
-        for i in range(0, len(words), 16):
-            lines.append(" ".join(words[i:i + 16]))
+        for i in range(0, len(words), 18):
+            lines.append(" ".join(words[i:i + 18]))
         formatted.append("\n".join(lines))
     return "\n\n".join(formatted)
 
@@ -106,7 +267,9 @@ def format_body(paragraphs):
 def bullet_points_summary(paragraphs):
     bullets = []
     for p in paragraphs[:4]:
-        cleaned = re.sub(r"\s+", " ", p).strip()
+        sentence = split_sentences(p)
+        cleaned = sentence[0] if sentence else p
+        cleaned = re.sub(r"\s+", " ", cleaned).strip()
         if cleaned:
             bullets.append(f"- {smart_truncate(cleaned, 140, add_ellipsis=True)}")
 
@@ -117,17 +280,17 @@ def bullet_points_summary(paragraphs):
 
 
 def generate_video_script(title, intro, body):
-    short_body = smart_truncate(re.sub(r"\s+", " ", body), 220, add_ellipsis=True)
+    body_summary = smart_truncate(re.sub(r"\s+", " ", body), 200, add_ellipsis=True)
     return (
         f"Here’s the latest on {title}. "
-        f"{smart_truncate(intro, 120, add_ellipsis=True)}. "
-        f"{short_body}. "
-        f"Stay tuned for more updates."
+        f"{smart_truncate(intro, 110, add_ellipsis=True)} "
+        f"{body_summary} "
+        f"Follow for more updates."
     )
 
 
 def generate_caption(title):
-    return f"{title} — quick SEO-ready breakdown, key details, and short video summary."
+    return f"{title} — quick breakdown, key details, and short video summary."
 
 
 def generate_hashtags(title):
@@ -148,21 +311,54 @@ def get_counters(meta_description, seo_title):
     }
 
 
+def get_seo_score(seo_title, meta_description, focus_keyphrase):
+    score = 0
+    notes = []
+
+    if 45 <= len(seo_title) <= 60:
+        score += 35
+        notes.append("SEO title length is strong.")
+    else:
+        notes.append("SEO title length should be closer to 45-60 characters.")
+
+    if 120 <= len(meta_description) <= 160:
+        score += 35
+        notes.append("Meta description length is strong.")
+    else:
+        notes.append("Meta description should be closer to 120-160 characters.")
+
+    if focus_keyphrase and focus_keyphrase.lower() in seo_title.lower():
+        score += 15
+        notes.append("Focus keyphrase appears in SEO title.")
+    else:
+        notes.append("Add the focus keyphrase to SEO title.")
+
+    if focus_keyphrase and focus_keyphrase.lower() in meta_description.lower():
+        score += 15
+        notes.append("Focus keyphrase appears in meta description.")
+    else:
+        notes.append("Add the focus keyphrase to meta description.")
+
+    return {
+        "score": score,
+        "notes": notes
+    }
+
+
 def format_seo_article(article):
     article = clean_text(article)
     paragraphs = split_paragraphs(article)
 
     title = extract_title(paragraphs)
-    h1 = f"{title} 2026"
+    focus_keyphrase = create_focus_keyphrase(title, article)
+    seo_title = create_seo_title(title, focus_keyphrase)
+    meta_description = create_meta_description(article, focus_keyphrase)
     intro = create_intro(article)
-    h2_list = create_h2_sections(paragraphs)
+    h2_list = create_h2_sections(paragraphs, focus_keyphrase)
     body = format_body(paragraphs)
-    focus_keyphrase = title
-    seo_title = smart_truncate(title, 60, add_ellipsis=False)
-    meta_description = create_meta_description(article)
+    slug = create_slug(title, focus_keyphrase)
     image_alt = f"Main image related to {title}"
     image_title = title
-    slug = create_slug(title)
     short_summary = bullet_points_summary(paragraphs)
     internal_link = "Read more about [Topic]..."
     conclusion = (
@@ -173,9 +369,10 @@ def format_seo_article(article):
     caption = generate_caption(title)
     hashtags = generate_hashtags(title)
     counters = get_counters(meta_description, seo_title)
+    seo_score = get_seo_score(seo_title, meta_description, focus_keyphrase)
 
     return {
-        "H1 Tag": h1,
+        "H1 Tag": f"{title} 2026",
         "Introduction": intro,
         "H2 Tags": "\n".join(h2_list),
         "Main Content Body": body,
@@ -191,11 +388,15 @@ def format_seo_article(article):
         "Video Script": video_script,
         "Caption": caption,
         "Hashtags": hashtags,
-        "Counters": counters
+        "Counters": counters,
+        "SEO Score": seo_score
     }
 
 
 def build_export_text(data):
+    seo_score = data.get("SEO Score", {})
+    notes = "\n".join(f"- {note}" for note in seo_score.get("notes", []))
+
     return f"""
 ==================== H1 TAG ====================
 {data.get("H1 Tag", "")}
@@ -248,6 +449,14 @@ Caption:
 
 Hashtags:
 {data.get("Hashtags", "")}
+
+==================== SEO SCORE ====================
+
+Score:
+{seo_score.get("score", 0)}
+
+Notes:
+{notes}
 """.strip()
 
 
@@ -324,6 +533,13 @@ def export_docx():
         for section in sections:
             doc.add_heading(section, level=2)
             doc.add_paragraph(str(data.get(section, "")))
+
+        score = data.get("SEO Score", {})
+        doc.add_heading("SEO Score", level=2)
+        doc.add_paragraph(f"Score: {score.get('score', 0)}")
+
+        for note in score.get("notes", []):
+            doc.add_paragraph(note, style="List Bullet")
 
         buffer = BytesIO()
         doc.save(buffer)
