@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>SEO Tool</title>
+</head>
+<body>
+  <h1>SEO Formatter</h1>
+
+  <textarea id="input" rows="10" cols="50"></textarea><br><br>
+  <button onclick="format()">Format</button>
+
+  <pre id="output"></pre>
+
+  <script>
+    async function format() {
+      let text = document.getElementById("input").value;
+
+      let res = await fetch("/format", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({article: text})
+      });
+
+      let data = await res.json();
+      document.getElementById("output").innerText = JSON.stringify(data, null, 2);
+    }
+  </script>
+</body>
+</html>
