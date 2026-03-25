@@ -11,6 +11,8 @@ const themeToggle = document.getElementById("themeToggle");
 const copyButtons = document.querySelectorAll(".copy-chip");
 const seoTitleLength = document.getElementById("seoTitleLength");
 const metaLength = document.getElementById("metaLength");
+const seoScore = document.getElementById("seoScore");
+const seoNotes = document.getElementById("seoNotes");
 
 let currentResult = {};
 
@@ -82,6 +84,10 @@ function renderOutput(data) {
   outputContainer.innerHTML = html;
   seoTitleLength.textContent = data.Counters?.seo_title_length || 0;
   metaLength.textContent = data.Counters?.meta_length || 0;
+  seoScore.textContent = data["SEO Score"]?.score || 0;
+
+  const notes = data["SEO Score"]?.notes || [];
+  seoNotes.innerHTML = notes.map(note => `<div class="seo-note-item">• ${escapeHtml(note)}</div>`).join("");
 }
 
 function buildCopyAllText(data) {
@@ -135,6 +141,9 @@ ${data["Caption"] || ""}
 
 Hashtags:
 ${data["Hashtags"] || ""}
+
+SEO Score:
+${data["SEO Score"]?.score || 0}
   `.trim();
 }
 
@@ -225,6 +234,8 @@ clearOutputBtn.addEventListener("click", () => {
   outputContainer.innerHTML = `<div class="empty-state">Formatted SEO output will appear here.</div>`;
   seoTitleLength.textContent = "0";
   metaLength.textContent = "0";
+  seoScore.textContent = "0";
+  seoNotes.innerHTML = "";
   setStatus("Output cleared.", "accent");
 });
 
