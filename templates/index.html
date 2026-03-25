@@ -1,29 +1,112 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <title>SEO Tool</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SEO Content Formatter V2 ULTRA PRO</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
 </head>
 <body>
-  <h1>SEO Formatter</h1>
+  <div class="app-shell">
+    <header class="topbar">
+      <div>
+        <h1>SEO Content Formatter V2 ULTRA PRO</h1>
+        <p>Clean • Fast • Copy-Friendly • Export Ready</p>
+      </div>
+      <button id="themeToggle" class="btn btn-primary">Toggle Theme</button>
+    </header>
 
-  <textarea id="input" rows="10" cols="50"></textarea><br><br>
-  <button onclick="format()">Format</button>
+    <main class="main-grid">
+      <section class="card">
+        <div class="card-head">
+          <div>
+            <h2>Input Article</h2>
+            <p>Paste your article here</p>
+          </div>
+        </div>
 
-  <pre id="output"></pre>
+        <textarea id="articleInput" class="editor" placeholder="Paste your article here..."></textarea>
 
-  <script>
-    async function format() {
-      let text = document.getElementById("input").value;
+        <div class="button-row">
+          <button id="formatBtn" class="btn btn-primary">Format SEO</button>
+          <button id="clearInputBtn" class="btn btn-secondary">Clear Input</button>
+        </div>
+      </section>
 
-      let res = await fetch("/format", {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({article: text})
-      });
+      <section class="card">
+        <div class="card-head">
+          <div>
+            <h2>SEO Output</h2>
+            <p>Formatted result with highlighted sections</p>
+          </div>
+        </div>
 
-      let data = await res.json();
-      document.getElementById("output").innerText = JSON.stringify(data, null, 2);
-    }
-  </script>
+        <div id="outputContainer" class="output-area">
+          <div class="empty-state">Formatted SEO output will appear here.</div>
+        </div>
+
+        <div class="button-row">
+          <button id="copyAllBtn" class="btn btn-secondary">Copy All</button>
+          <button id="exportTxtBtn" class="btn btn-secondary">Export TXT</button>
+          <button id="exportDocxBtn" class="btn btn-secondary">Export DOCX</button>
+          <button id="clearOutputBtn" class="btn btn-secondary">Clear Output</button>
+        </div>
+      </section>
+    </main>
+
+    <section class="card quick-copy-card">
+      <div class="card-head">
+        <div>
+          <h2>Quick Copy Sections</h2>
+          <p>Copy only the section you need</p>
+        </div>
+      </div>
+
+      <div class="quick-copy-grid">
+        <button class="copy-chip" data-section="H1 Tag">H1 Tag</button>
+        <button class="copy-chip" data-section="Introduction">Introduction</button>
+        <button class="copy-chip" data-section="H2 Tags">H2 Tags</button>
+        <button class="copy-chip" data-section="Main Content Body">Main Content Body</button>
+        <button class="copy-chip" data-section="Internal Link Placeholder">Internal Link Placeholder</button>
+        <button class="copy-chip" data-section="Conclusion & CTA">Conclusion & CTA</button>
+        <button class="copy-chip" data-section="Focus Keyphrase">Focus Keyphrase</button>
+        <button class="copy-chip" data-section="SEO Title">SEO Title</button>
+        <button class="copy-chip" data-section="Meta Description">Meta Description</button>
+        <button class="copy-chip" data-section="Image Alt Text">Image Alt Text</button>
+        <button class="copy-chip" data-section="Image Title">Image Title</button>
+        <button class="copy-chip" data-section="Slug (URL)">Slug (URL)</button>
+        <button class="copy-chip" data-section="Short Summary (20-second video)">Short Summary</button>
+        <button class="copy-chip" data-section="Video Script">Video Script</button>
+        <button class="copy-chip" data-section="Caption">Caption</button>
+        <button class="copy-chip" data-section="Hashtags">Hashtags</button>
+      </div>
+    </section>
+
+    <section class="card stats-card">
+      <div class="card-head">
+        <div>
+          <h2>SEO Counters</h2>
+          <p>Quick quality check</p>
+        </div>
+      </div>
+
+      <div class="stats-grid">
+        <div class="stat-box">
+          <span class="stat-label">SEO Title Length</span>
+          <span id="seoTitleLength" class="stat-value">0</span>
+        </div>
+        <div class="stat-box">
+          <span class="stat-label">Meta Description Length</span>
+          <span id="metaLength" class="stat-value">0</span>
+        </div>
+      </div>
+    </section>
+
+    <footer class="statusbar">
+      <span id="statusText">Ready</span>
+    </footer>
+  </div>
+
+  <script src="{{ url_for('static', filename='script.js') }}"></script>
 </body>
 </html>
