@@ -1,7 +1,12 @@
 from flask import Flask, render_template, request, jsonify, send_file
-from docx import Document
 from io import BytesIO
 import re
+
+try:
+    from docx import Document
+    DOCX_AVAILABLE = True
+except Exception:
+    DOCX_AVAILABLE = False
 
 app = Flask(__name__)
 
@@ -218,70 +223,85 @@ def index():
 
 @app.route("/format", methods=["POST"])
 def format_article():
-    data = request.get_json(silent=True) or {}
-    article = (data.get("article") or "").strip()
+    try:
+        data = request.get_json(silent=True) or {}
+        article = (data.get("article") or "").strip()
 
-    if not article:
-        return jsonify({"error": "Please paste article content first."}), 400
+        if not article:
+            return jsonify({"error": "Please paste article content first."}), 400
 
-    result = format_seo_article(article)
-    return jsonify(result)
+        result = format_seo_article(article)
+        return jsonify(result)
+    except Exception as e:
+        app.logger.exception("Format error")
+        return jsonify({"error": f"Server error: {str(e)}"}), 500
 
 
 @app.route("/export/txt", methods=["POST"])
 def export_txt():
-    data = request.get_json(silent=True) or {}
-    content = build_export_text(data)
-    buffer = BytesIO()
-    buffer.write(content.encode("utf-8"))
-    buffer.seek(0)
-    return send_file(
-        buffer,
-        as_attachment=True,
-        download_name="seo_output.txt",
-        mimetype="text/plain"
-    )
+    try:
+        data = request.get_json(silent=True) or {}
+        content = build_export_text(data)
+        buffer = BytesIO()
+        buffer.write(content.encode("utf-8"))
+        buffer.seek(0)
+        return send_file(
+            buffer,
+            as_attachment=True,
+            download_name="seo_output.txt",
+            mimetype="text/plain"
+        )
+    except Exception as e:
+        app.logger.exception("TXT export error")
+        return jsonify({"error": f"TXT export failed: {str(e)}"}), 500
 
 
 @app.route("/export/docx", methods=["POST"])
 def export_docx():
-    data = request.get_json(silent=True) or {}
-    doc = Document()
-    doc.add_heading("SEO Content Formatter Export", level=1)
+    try:
+        if not DOCX_AVAILABLE:
+            return jsonify({"error": "DOCX export is not available. python-docx is missing."}), 500
 
-    sections = [
-        "H1 Tag",
-        "Introduction",
-        "H2 Tags",
-        "Main Content Body",
-        "Internal Link Placeholder",
-        "Conclusion & CTA",
-        "Focus Keyphrase",
-        "SEO Title",
-        "Meta Description",
-        "Image Alt Text",
-        "Image Title",
-        "Slug (URL)",
-        "Short Summary (20-second video)",
-        "Video Script",
-        "Caption",
-        "Hashtags"
-    ]
+        data = request.get_json(silent=True) or {}
+        doc = Document()
+        doc.add_heading("SEO Content Formatter Export", level=1)
 
-    for section in sections:
-        doc.add_heading(section, level=2)
-        doc.add_paragraph(data.get(section, ""))
+        sections = [
+            "H1 Tag",
+            "Introduction",
+            "H2 Tags",
+            "Main Content Body",
+            "Internal Link Placeholder",
+            "Conclusion & CTA",
+            "Focus Keyphrase",
+            "SEO Title",
+            "Meta Description",
+            "Image Alt Text",
+            "Image Title",
+            "Slug (URL)",
+            "Short Summary (20-second video)",
+            "Video Script",
+            "Caption",
+            "Hashtags"
+        ]
 
-    buffer = BytesIO()
-    doc.save(buffer)
-    buffer.seek(0)
+        for section in sections:
+            doc.add_heading(section, level=2)
+            doc.add_paragraph(str(data.get(section, "")))
 
-    return send_file(
-        buffer,
-        as_attachment=True,
-        download_name="seo_output.docx",
-        mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-    )
+        buffer = BytesIO()
+        doc.save(buffer)
+        buffer.seek(0)
+
+        return send_file(
+            buffer,
+            as_attachment=True,
+            download_name="seo_output.docx",
+            mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        )
+    except Exception as e:
+        app.logger.exception("DOCX export error")
+        return jsonify({"error": f"DOCX export failed: {str(e)}"}), 500
 
 
 if __name__ == "__main__":
