@@ -24,10 +24,39 @@ def split_paragraphs(text):
     return paragraphs if paragraphs else [text]
 
 
+def smart_truncate(text, limit, add_ellipsis=False):
+    text = re.sub(r"\s+", " ", text).strip()
+    if len(text) <= limit:
+        return text
+
+    words = text.split()
+    result_words = []
+    current_length = 0
+
+    for word in words:
+        extra = len(word) if not result_words else len(word) + 1
+        reserved = 3 if add_ellipsis else 0
+
+        if current_length + extra + reserved <= limit:
+            result_words.append(word)
+            current_length += extra
+        else:
+            break
+
+    if not result_words:
+        fallback = text[: max(0, limit - (3 if add_ellipsis else 0))].rstrip()
+        return fallback + "..." if add_ellipsis and fallback else fallback
+
+    result = " ".join(result_words).strip()
+    if add_ellipsis and len(result) < len(text):
+        return result + "..."
+    return result
+
+
 def extract_title(paragraphs):
     if paragraphs:
         first = re.sub(r"\s+", " ", paragraphs[0]).strip()
-        title = first[:70]
+        title = smart_truncate(first, 70, add_ellipsis=False)
         return title if title else "SEO Article"
     return "SEO Article"
 
@@ -41,7 +70,7 @@ def create_slug(title):
 
 def create_meta_description(text):
     text = re.sub(r"\s+", " ", text).strip()
-    return text[:160]
+    return smart_truncate(text, 160, add_ellipsis=True)
 
 
 def create_intro(text):
@@ -56,8 +85,10 @@ def create_h2_sections(paragraphs):
         h2 = " ".join(words[:8]).strip()
         if h2:
             h2s.append(f"H2 {i}: {h2}")
+
     if not h2s:
         h2s.append("H2 1: Main Article Details")
+
     return h2s
 
 
@@ -77,17 +108,19 @@ def bullet_points_summary(paragraphs):
     for p in paragraphs[:4]:
         cleaned = re.sub(r"\s+", " ", p).strip()
         if cleaned:
-            bullets.append(f"- {cleaned[:140]}")
+            bullets.append(f"- {smart_truncate(cleaned, 140, add_ellipsis=True)}")
+
     if not bullets:
         bullets.append("- No summary available.")
+
     return "\n".join(bullets)
 
 
 def generate_video_script(title, intro, body):
-    short_body = re.sub(r"\s+", " ", body)[:220]
+    short_body = smart_truncate(re.sub(r"\s+", " ", body), 220, add_ellipsis=True)
     return (
         f"Here’s the latest on {title}. "
-        f"{intro[:120]}. "
+        f"{smart_truncate(intro, 120, add_ellipsis=True)}. "
         f"{short_body}. "
         f"Stay tuned for more updates."
     )
@@ -100,9 +133,11 @@ def generate_caption(title):
 def generate_hashtags(title):
     words = re.findall(r"[A-Za-z0-9]+", title)
     tags = ["#SEO", "#News", "#Content", "#Trending", "#Update"]
+
     for word in words[:5]:
         if len(word) > 2:
             tags.append(f"#{word}")
+
     return " ".join(tags[:10])
 
 
@@ -123,7 +158,7 @@ def format_seo_article(article):
     h2_list = create_h2_sections(paragraphs)
     body = format_body(paragraphs)
     focus_keyphrase = title
-    seo_title = title[:60]
+    seo_title = smart_truncate(title, 60, add_ellipsis=False)
     meta_description = create_meta_description(article)
     image_alt = f"Main image related to {title}"
     image_title = title
@@ -245,6 +280,7 @@ def export_txt():
         buffer = BytesIO()
         buffer.write(content.encode("utf-8"))
         buffer.seek(0)
+
         return send_file(
             buffer,
             as_attachment=True,
