@@ -3,15 +3,15 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>SEO Content Formatter V4 SMART + Image Editor</title>
+  <title>SEO Content Formatter V5 SMART + Image Editor PRO</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
 </head>
 <body>
   <div class="app-shell">
     <header class="topbar">
       <div>
-        <h1>SEO Content Formatter V4 SMART</h1>
-        <p>Smarter SEO logic • Better titles • Better meta • Image editor side</p>
+        <h1>SEO Content Formatter V5 SMART</h1>
+        <p>Smarter SEO logic • Better titles • Better meta • Image editor PRO</p>
       </div>
       <button id="themeToggle" class="btn btn-primary">Toggle Theme</button>
     </header>
@@ -128,8 +128,8 @@
     <section class="card image-card">
       <div class="card-head">
         <div>
-          <h2>Image Editor Side</h2>
-          <p>Upload, edit, preview, and download image</p>
+          <h2>Image Editor PRO</h2>
+          <p>Crop • Text overlay • Watermark • Preset sizes • Smooth upscale</p>
         </div>
       </div>
 
@@ -137,7 +137,9 @@
         <div class="image-preview-box">
           <input type="file" id="imageUpload" accept="image/*" class="file-input" />
           <canvas id="imageCanvas" class="image-canvas"></canvas>
-          <div class="image-help">Upload image to start editing.</div>
+          <div class="image-help">
+            Upload image to start editing. Drag crop box to move. Use handles to resize.
+          </div>
         </div>
 
         <div class="image-controls">
@@ -161,6 +163,80 @@
           <div class="control-group">
             <div class="control-title">Contrast</div>
             <input type="range" id="contrastRange" min="0" max="200" value="100" />
+          </div>
+
+          <div class="control-group">
+            <div class="control-title">Preset Sizes</div>
+            <div class="button-row">
+              <button id="presetYoutubeBtn" class="btn btn-secondary">YouTube 1280x720</button>
+              <button id="presetFacebookBtn" class="btn btn-secondary">Facebook 1200x630</button>
+              <button id="presetTikTokBtn" class="btn btn-secondary">TikTok 1080x1920</button>
+              <button id="presetSquareBtn" class="btn btn-secondary">Square 1080x1080</button>
+            </div>
+          </div>
+
+          <div class="control-group">
+            <div class="control-title">Crop</div>
+            <div class="button-row">
+              <button id="toggleCropBtn" class="btn btn-secondary">Toggle Crop Mode</button>
+              <button id="applyCropBtn" class="btn btn-secondary">Apply Crop</button>
+            </div>
+          </div>
+
+          <div class="control-group">
+            <div class="control-title">Text Overlay</div>
+            <input type="text" id="overlayTextInput" class="text-input" placeholder="Enter overlay text" />
+            <div class="two-col">
+              <div>
+                <label class="mini-label">Font Size</label>
+                <input type="range" id="overlayFontSizeRange" min="16" max="100" value="42" />
+              </div>
+              <div>
+                <label class="mini-label">Text Color</label>
+                <input type="color" id="overlayColorInput" value="#ffffff" class="color-input" />
+              </div>
+            </div>
+            <div class="two-col">
+              <div>
+                <label class="mini-label">X Position</label>
+                <input type="range" id="overlayXRange" min="0" max="100" value="50" />
+              </div>
+              <div>
+                <label class="mini-label">Y Position</label>
+                <input type="range" id="overlayYRange" min="0" max="100" value="85" />
+              </div>
+            </div>
+            <div class="button-row">
+              <button id="applyTextBtn" class="btn btn-secondary">Apply Text</button>
+              <button id="clearTextBtn" class="btn btn-secondary">Clear Text</button>
+            </div>
+          </div>
+
+          <div class="control-group">
+            <div class="control-title">Watermark</div>
+            <input type="text" id="watermarkInput" class="text-input" placeholder="Enter watermark" />
+            <div class="two-col">
+              <div>
+                <label class="mini-label">Watermark Size</label>
+                <input type="range" id="watermarkSizeRange" min="12" max="60" value="22" />
+              </div>
+              <div>
+                <label class="mini-label">Opacity</label>
+                <input type="range" id="watermarkOpacityRange" min="5" max="100" value="35" />
+              </div>
+            </div>
+            <div class="button-row">
+              <button id="applyWatermarkBtn" class="btn btn-secondary">Apply Watermark</button>
+              <button id="clearWatermarkBtn" class="btn btn-secondary">Clear Watermark</button>
+            </div>
+          </div>
+
+          <div class="control-group">
+            <div class="control-title">Smooth Upscale</div>
+            <div class="button-row">
+              <button id="upscale2xBtn" class="btn btn-secondary">Upscale 2x</button>
+              <button id="upscale4xBtn" class="btn btn-secondary">Upscale 4x</button>
+            </div>
           </div>
 
           <div class="control-group">
