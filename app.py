@@ -1,6 +1,9 @@
 from flask import Flask, render_template, request, jsonify, send_file
 from io import BytesIO
 import re
+import base64
+
+from PIL import Image, ImageEnhance, ImageOps, ImageFilter
 
 try:
     from docx import Document
@@ -18,6 +21,8 @@ STOP_WORDS = {
     "between", "during", "including", "until", "against", "among", "within",
     "news", "update", "latest"
 }
+
+SUPPORTED_IMAGE_FORMATS = {"png", "jpg", "jpeg", "webp"}
 
 
 def clean_text(text):
@@ -498,6 +503,56 @@ Notes:
 """.strip()
 
 
+def decode_base64_image(data_url: str) -> Image.Image:
+    if "," not in data_url:
+        raise ValueError("Invalid image data.")
+    _, encoded = data_url.split(",", 1)
+    raw = base64.b64decode(encoded)
+    return Image.open(BytesIO(raw))
+
+
+def encode_image_to_base64(image: Image.Image, fmt: str = "PNG") -> str:
+    buffer = BytesIO()
+    image.save(buffer, format=fmt)
+    encoded = base64.b64encode(buffer.getvalue()).decode("utf-8")
+    mime = "image/png" if fmt.upper() == "PNG" else "image/jpeg" if fmt.upper() == "JPEG" else "image/webp"
+    return f"data:{mime};base64,{encoded}"
+
+
+def upscale_smooth_image(image: Image.Image, scale: int, clean_mode: str = "balanced") -> Image.Image:
+    image = ImageOps.exif_transpose(image)
+
+    if image.mode not in ("RGB", "RGBA", "L"):
+        image = image.convert("RGBA") if "A" in image.getbands() else image.convert("RGB")
+
+    target_size = (image.width * scale, image.height * scale)
+
+    current = image
+    while current.width * 1.8 < target_size[0] or current.height * 1.8 < target_size[1]:
+        next_size = (
+            min(target_size[0], int(current.width * 1.8)),
+            min(target_size[1], int(current.height * 1.8)),
+        )
+        current = current.resize(next_size, Image.Resampling.LANCZOS)
+
+    if current.size != target_size:
+        current = current.resize(target_size, Image.Resampling.LANCZOS)
+
+    if clean_mode == "soft":
+        current = current.filter(ImageFilter.SMOOTH_MORE)
+        current = ImageEnhance.Sharpness(current).enhance(1.05)
+    elif clean_mode == "balanced":
+        current = current.filter(ImageFilter.SMOOTH)
+        current = ImageEnhance.Sharpness(current).enhance(1.12)
+        current = ImageEnhance.Contrast(current).enhance(1.03)
+    elif clean_mode == "cleanest":
+        current = current.filter(ImageFilter.SMOOTH_MORE)
+        current = ImageEnhance.Sharpness(current).enhance(1.22)
+        current = ImageEnhance.Contrast(current).enhance(1.06)
+
+    return current
+
+
 @app.route("/")
 def index():
     return render_template("index.html")
@@ -600,6 +655,58 @@ def export_docx():
     except Exception as e:
         app.logger.exception("DOCX export error")
         return jsonify({"error": f"DOCX export failed: {str(e)}"}), 500
+
+
+@app.route("/image/upscale-smooth", methods=["POST"])
+def image_upscale_smooth():
+    try:
+        data = request.get_json(silent=True) or {}
+        image_data = data.get("image")
+        scale = int(data.get("scale", 2))
+        clean_mode = (data.get("clean_mode") or "balanced").strip().lower()
+        output_format = (data.get("output_format") or "png").strip().lower()
+
+        if not image_data:
+            return jsonify({"error": "No image provided."}), 400
+
+        if scale not in (2, 3, 4):
+            return jsonify({"error": "Scale must be 2, 3, or 4."}), 400
+
+        if clean_mode not in ("soft", "balanced", "cleanest"):
+            clean_mode = "balanced"
+
+        if output_format not in SUPPORTED_IMAGE_FORMATS:
+            output_format = "png"
+
+        image = decode_base64_image(image_data)
+        result = upscale_smooth_image(image, scale=scale, clean_mode=clean_mode)
+
+        if output_format in ("jpg", "jpeg"):
+            if result.mode in ("RGBA", "LA"):
+                bg = Image.new("RGB", result.size, (255, 255, 255))
+                bg.paste(result, mask=result.getchannel("A"))
+                result = bg
+            elif result.mode != "RGB":
+                result = result.convert("RGB")
+            fmt = "JPEG"
+        elif output_format == "webp":
+            fmt = "WEBP"
+        else:
+            fmt = "PNG"
+
+        result_data = encode_image_to_base64(result, fmt=fmt)
+
+        return jsonify({
+            "image": result_data,
+            "width": result.width,
+            "height": result.height,
+            "scale": scale,
+            "clean_mode": clean_mode,
+            "output_format": output_format
+        })
+    except Exception as e:
+        app.logger.exception("Upscale smooth error")
+        return jsonify({"error": f"Upscale failed: {str(e)}"}), 500
 
 
 if __name__ == "__main__":
