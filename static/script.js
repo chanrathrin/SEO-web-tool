@@ -332,6 +332,7 @@ themeToggle.addEventListener("click", () => {
 /* IMAGE EDITOR */
 const ctx = imageCanvas.getContext("2d");
 let loadedImage = null;
+let originalImageDataUrl = null;
 
 let imageState = {
   rotation: 0,
@@ -532,6 +533,7 @@ function applyPreset(width, height) {
   const img = new Image();
   img.onload = () => {
     loadedImage = img;
+    originalImageDataUrl = tempCanvas.toDataURL("image/png");
     resetImageState();
     drawImageToCanvas();
     setStatus(`Preset applied: ${width}x${height}`, "success");
@@ -634,6 +636,8 @@ imageUpload.addEventListener("change", (event) => {
 
   const reader = new FileReader();
   reader.onload = () => {
+    originalImageDataUrl = reader.result;
+
     const img = new Image();
     img.onload = () => {
       loadedImage = img;
@@ -718,6 +722,9 @@ applyCropBtn.addEventListener("click", () => {
   tempCanvas.height = Math.round(h);
   tempCtx.drawImage(imageCanvas, x, y, w, h, 0, 0, tempCanvas.width, tempCanvas.height);
 
+  const dataUrl = tempCanvas.toDataURL("image/png");
+  originalImageDataUrl = dataUrl;
+
   const img = new Image();
   img.onload = () => {
     loadedImage = img;
@@ -726,7 +733,7 @@ applyCropBtn.addEventListener("click", () => {
     drawImageToCanvas();
     setStatus("Crop applied.", "success");
   };
-  img.src = tempCanvas.toDataURL("image/png");
+  img.src = dataUrl;
 });
 
 applyTextBtn.addEventListener("click", () => {
@@ -769,7 +776,7 @@ presetTikTokBtn.addEventListener("click", () => applyPreset(1080, 1920));
 presetSquareBtn.addEventListener("click", () => applyPreset(1080, 1080));
 
 upscaleSmoothBtn.addEventListener("click", async () => {
-  if (!loadedImage) {
+  if (!loadedImage || !originalImageDataUrl) {
     setStatus("Upload image first.", "warning");
     return;
   }
@@ -777,13 +784,20 @@ upscaleSmoothBtn.addEventListener("click", async () => {
   try {
     setStatus("Running UpscaleAI Smooth...", "accent");
 
+    const sourceImage =
+      imageState.overlayText ||
+      imageState.watermarkText ||
+      imageState.cropMode
+        ? getCanvasImageData()
+        : originalImageDataUrl;
+
     const response = await fetch("/image/upscale-smooth", {
       method: "POST",
       headers: {
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
-        image: getCanvasImageData(),
+        image: sourceImage,
         scale: Number(upscaleScaleSelect.value),
         clean_mode: upscaleCleanModeSelect.value,
         output_format: upscaleFormatSelect.value
@@ -797,6 +811,7 @@ upscaleSmoothBtn.addEventListener("click", async () => {
       return;
     }
 
+    originalImageDataUrl = data.image;
     loadImageFromDataUrl(
       data.image,
       `UpscaleAI Smooth done: ${data.scale}x ${data.clean_mode}`
