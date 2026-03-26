@@ -72,7 +72,10 @@ def smart_truncate(text, limit, add_ellipsis=False):
 
 def title_case_phrase(text):
     words = text.split()
-    small_words = {"and", "or", "but", "for", "nor", "a", "an", "the", "as", "at", "by", "for", "from", "in", "into", "of", "on", "onto", "to", "with"}
+    small_words = {
+        "and", "or", "but", "for", "nor", "a", "an", "the", "as", "at", "by",
+        "from", "in", "into", "of", "on", "onto", "to", "with"
+    }
     out = []
     for i, word in enumerate(words):
         lower = word.lower()
@@ -83,7 +86,7 @@ def title_case_phrase(text):
     return " ".join(out)
 
 
-def extract_keywords(text, limit=6):
+def extract_keywords(text, limit=8):
     words = re.findall(r"[A-Za-z0-9']+", text.lower())
     freq = {}
 
@@ -112,9 +115,12 @@ def find_best_sentence(sentences, keywords):
                 score += 3
 
         length = len(sentence)
-        if 60 <= length <= 180:
-            score += 2
-        elif 35 <= length <= 220:
+        if 70 <= length <= 170:
+            score += 3
+        elif 40 <= length <= 220:
+            score += 1
+
+        if "," in sentence:
             score += 1
 
         if score > best_score:
@@ -131,18 +137,16 @@ def extract_title(paragraphs):
     first = re.sub(r"\s+", " ", paragraphs[0]).strip()
     sentences = split_sentences(first)
     candidate = sentences[0] if sentences else first
-
     candidate = re.sub(r"^[\"'“”‘’\-–—:;\s]+", "", candidate).strip()
-    candidate = smart_truncate(candidate, 70, add_ellipsis=False)
+    candidate = smart_truncate(candidate, 72, add_ellipsis=False)
 
     return candidate if candidate else "SEO Article"
 
 
 def create_focus_keyphrase(title, article):
-    keywords = extract_keywords(title + " " + article, limit=4)
+    keywords = extract_keywords(title + " " + article, limit=5)
     if keywords:
-        phrase = " ".join(keywords[:3])
-        return title_case_phrase(phrase)
+        return title_case_phrase(" ".join(keywords[:3]))
     return title_case_phrase(smart_truncate(title, 50, add_ellipsis=False))
 
 
@@ -158,48 +162,67 @@ def create_slug(title, focus_keyphrase=""):
 def create_intro(text):
     sentences = split_sentences(text)
     if not sentences:
-        return smart_truncate(text, 220, add_ellipsis=True)
+        return smart_truncate(text, 260, add_ellipsis=True)
 
     intro = " ".join(sentences[:2])
     return smart_truncate(intro, 260, add_ellipsis=True)
 
 
-def create_seo_title(title, focus_keyphrase):
+def create_seo_title_options(title, focus_keyphrase):
     title = re.sub(r"\s+", " ", title).strip()
     focus_keyphrase = re.sub(r"\s+", " ", focus_keyphrase).strip()
 
-    options = [
-        f"{title}",
-        f"{title} | {focus_keyphrase}",
+    candidates = [
+        title,
+        f"{title} | Key Details",
+        f"{title} | Full Breakdown",
         f"{focus_keyphrase}: {title}",
-        f"{title} - Full Breakdown",
-        f"{focus_keyphrase} - Key Details"
+        f"{title} - Latest Update",
+        f"{focus_keyphrase} - Key Details",
+        f"{title} | What Happened",
     ]
 
-    for option in options:
-        if len(option) <= 60:
-            return option
+    results = []
+    seen = set()
 
-    return smart_truncate(title, 60, add_ellipsis=False)
+    for candidate in candidates:
+        clean = smart_truncate(candidate, 60, add_ellipsis=False)
+        if clean.lower() not in seen:
+            seen.add(clean.lower())
+            results.append(clean)
+
+    return results[:3]
 
 
-def create_meta_description(text, focus_keyphrase):
+def create_meta_description_options(text, focus_keyphrase):
     cleaned = re.sub(r"\s+", " ", text).strip()
     sentences = split_sentences(cleaned)
     keywords = extract_keywords(cleaned, limit=6)
 
-    best = find_best_sentence(sentences, keywords)
-    if not best:
-        best = cleaned
+    best = find_best_sentence(sentences, keywords) or cleaned
+    alt_1 = smart_truncate(best, 160, add_ellipsis=True)
 
-    best = re.sub(r"\s+", " ", best).strip()
+    if focus_keyphrase and focus_keyphrase.lower() not in alt_1.lower():
+        combo = f"{focus_keyphrase}: {best}"
+        alt_2 = smart_truncate(combo, 160, add_ellipsis=True)
+    else:
+        alt_2 = alt_1
 
-    if focus_keyphrase and focus_keyphrase.lower() not in best.lower():
-        candidate = f"{focus_keyphrase}: {best}"
-        if len(candidate) <= 160:
-            best = candidate
+    first_two = " ".join(sentences[:2]) if sentences else cleaned
+    alt_3 = smart_truncate(first_two, 160, add_ellipsis=True)
 
-    return smart_truncate(best, 160, add_ellipsis=True)
+    options = []
+    seen = set()
+    for item in [alt_1, alt_2, alt_3]:
+        key = item.lower()
+        if key not in seen:
+            seen.add(key)
+            options.append(item)
+
+    while len(options) < 3:
+        options.append(options[-1] if options else "")
+
+    return options[:3]
 
 
 def create_h2_sections(paragraphs, focus_keyphrase):
@@ -207,10 +230,10 @@ def create_h2_sections(paragraphs, focus_keyphrase):
     keywords = extract_keywords(" ".join(paragraphs), limit=8)
 
     for p in paragraphs[1:8]:
-        sentence = split_sentences(p)
-        candidate = sentence[0] if sentence else p
+        sentence_list = split_sentences(p)
+        candidate = sentence_list[0] if sentence_list else p
         candidate = re.sub(r"\s+", " ", candidate).strip()
-        candidate = smart_truncate(candidate, 55, add_ellipsis=False)
+        candidate = smart_truncate(candidate, 58, add_ellipsis=False)
 
         if not candidate:
             continue
@@ -225,7 +248,7 @@ def create_h2_sections(paragraphs, focus_keyphrase):
         if focus_keyphrase.lower() in lower:
             score += 2
 
-        if 20 <= len(candidate) <= 55:
+        if 20 <= len(candidate) <= 58:
             score += 2
 
         candidates.append((score, title_case_phrase(candidate)))
@@ -267,8 +290,8 @@ def format_body(paragraphs):
 def bullet_points_summary(paragraphs):
     bullets = []
     for p in paragraphs[:4]:
-        sentence = split_sentences(p)
-        cleaned = sentence[0] if sentence else p
+        sentence_list = split_sentences(p)
+        cleaned = sentence_list[0] if sentence_list else p
         cleaned = re.sub(r"\s+", " ", cleaned).strip()
         if cleaned:
             bullets.append(f"- {smart_truncate(cleaned, 140, add_ellipsis=True)}")
@@ -351,8 +374,13 @@ def format_seo_article(article):
 
     title = extract_title(paragraphs)
     focus_keyphrase = create_focus_keyphrase(title, article)
-    seo_title = create_seo_title(title, focus_keyphrase)
-    meta_description = create_meta_description(article, focus_keyphrase)
+
+    seo_title_options = create_seo_title_options(title, focus_keyphrase)
+    meta_description_options = create_meta_description_options(article, focus_keyphrase)
+
+    seo_title = seo_title_options[0]
+    meta_description = meta_description_options[0]
+
     intro = create_intro(article)
     h2_list = create_h2_sections(paragraphs, focus_keyphrase)
     body = format_body(paragraphs)
@@ -380,7 +408,9 @@ def format_seo_article(article):
         "Conclusion & CTA": conclusion,
         "Focus Keyphrase": focus_keyphrase,
         "SEO Title": seo_title,
+        "SEO Title Options": seo_title_options,
         "Meta Description": meta_description,
+        "Meta Description Options": meta_description_options,
         "Image Alt Text": image_alt,
         "Image Title": image_title,
         "Slug (URL)": slug,
@@ -396,6 +426,8 @@ def format_seo_article(article):
 def build_export_text(data):
     seo_score = data.get("SEO Score", {})
     notes = "\n".join(f"- {note}" for note in seo_score.get("notes", []))
+    seo_title_options = "\n".join(f"- {item}" for item in data.get("SEO Title Options", []))
+    meta_options = "\n".join(f"- {item}" for item in data.get("Meta Description Options", []))
 
     return f"""
 ==================== H1 TAG ====================
@@ -424,8 +456,14 @@ Focus Keyphrase:
 SEO Title:
 {data.get("SEO Title", "")}
 
+SEO Title Options:
+{seo_title_options}
+
 Meta Description:
 {data.get("Meta Description", "")}
+
+Meta Description Options:
+{meta_options}
 
 Image Alt Text:
 {data.get("Image Alt Text", "")}
@@ -533,6 +571,14 @@ def export_docx():
         for section in sections:
             doc.add_heading(section, level=2)
             doc.add_paragraph(str(data.get(section, "")))
+
+        doc.add_heading("SEO Title Options", level=2)
+        for item in data.get("SEO Title Options", []):
+            doc.add_paragraph(item, style="List Bullet")
+
+        doc.add_heading("Meta Description Options", level=2)
+        for item in data.get("Meta Description Options", []):
+            doc.add_paragraph(item, style="List Bullet")
 
         score = data.get("SEO Score", {})
         doc.add_heading("SEO Score", level=2)
