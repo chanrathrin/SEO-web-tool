@@ -13,6 +13,21 @@ const seoTitleLength = document.getElementById("seoTitleLength");
 const metaLength = document.getElementById("metaLength");
 const seoScore = document.getElementById("seoScore");
 const seoNotes = document.getElementById("seoNotes");
+const seoTitleOptions = document.getElementById("seoTitleOptions");
+const metaOptions = document.getElementById("metaOptions");
+
+/* image editor */
+const imageUpload = document.getElementById("imageUpload");
+const imageCanvas = document.getElementById("imageCanvas");
+const rotateLeftBtn = document.getElementById("rotateLeftBtn");
+const rotateRightBtn = document.getElementById("rotateRightBtn");
+const flipXBtn = document.getElementById("flipXBtn");
+const flipYBtn = document.getElementById("flipYBtn");
+const grayscaleBtn = document.getElementById("grayscaleBtn");
+const resetImageBtn = document.getElementById("resetImageBtn");
+const brightnessRange = document.getElementById("brightnessRange");
+const contrastRange = document.getElementById("contrastRange");
+const downloadImageBtn = document.getElementById("downloadImageBtn");
 
 let currentResult = {};
 
@@ -30,6 +45,19 @@ function escapeHtml(text) {
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;");
+}
+
+function renderOptionList(container, items, prefix) {
+  container.innerHTML = "";
+  items.forEach((item, index) => {
+    const btn = document.createElement("button");
+    btn.className = "option-item";
+    btn.textContent = `${prefix} ${index + 1}: ${item}`;
+    btn.addEventListener("click", async () => {
+      await copyText(item, `${prefix} ${index + 1} copied.`);
+    });
+    container.appendChild(btn);
+  });
 }
 
 function renderOutput(data) {
@@ -88,9 +116,15 @@ function renderOutput(data) {
 
   const notes = data["SEO Score"]?.notes || [];
   seoNotes.innerHTML = notes.map(note => `<div class="seo-note-item">• ${escapeHtml(note)}</div>`).join("");
+
+  renderOptionList(seoTitleOptions, data["SEO Title Options"] || [], "Title");
+  renderOptionList(metaOptions, data["Meta Description Options"] || [], "Meta");
 }
 
 function buildCopyAllText(data) {
+  const titleOptions = (data["SEO Title Options"] || []).map(x => `- ${x}`).join("\n");
+  const metaOptionsText = (data["Meta Description Options"] || []).map(x => `- ${x}`).join("\n");
+
   return `
 ==================== H1 TAG ====================
 ${data["H1 Tag"] || ""}
@@ -118,8 +152,14 @@ ${data["Focus Keyphrase"] || ""}
 SEO Title:
 ${data["SEO Title"] || ""}
 
+SEO Title Options:
+${titleOptions}
+
 Meta Description:
 ${data["Meta Description"] || ""}
+
+Meta Description Options:
+${metaOptionsText}
 
 Image Alt Text:
 ${data["Image Alt Text"] || ""}
@@ -236,6 +276,8 @@ clearOutputBtn.addEventListener("click", () => {
   metaLength.textContent = "0";
   seoScore.textContent = "0";
   seoNotes.innerHTML = "";
+  seoTitleOptions.innerHTML = "";
+  metaOptions.innerHTML = "";
   setStatus("Output cleared.", "accent");
 });
 
@@ -275,4 +317,132 @@ themeToggle.addEventListener("click", () => {
   document.body.classList.toggle("light-theme");
   const isLight = document.body.classList.contains("light-theme");
   setStatus(`Theme changed to ${isLight ? "light" : "dark"}.`, "accent");
+});
+
+/* image editor side */
+const ctx = imageCanvas.getContext("2d");
+let loadedImage = null;
+let imageState = {
+  rotation: 0,
+  flipX: 1,
+  flipY: 1,
+  grayscale: false,
+  brightness: 100,
+  contrast: 100
+};
+
+function resetImageState() {
+  imageState = {
+    rotation: 0,
+    flipX: 1,
+    flipY: 1,
+    grayscale: false,
+    brightness: 100,
+    contrast: 100
+  };
+  brightnessRange.value = 100;
+  contrastRange.value = 100;
+}
+
+function drawImageToCanvas() {
+  if (!loadedImage) return;
+
+  const radians = (imageState.rotation * Math.PI) / 180;
+  const rotated = imageState.rotation % 180 !== 0;
+
+  const w = loadedImage.width;
+  const h = loadedImage.height;
+
+  const canvasW = rotated ? h : w;
+  const canvasH = rotated ? w : h;
+
+  imageCanvas.width = canvasW;
+  imageCanvas.height = canvasH;
+
+  ctx.save();
+  ctx.clearRect(0, 0, imageCanvas.width, imageCanvas.height);
+  ctx.filter = `brightness(${imageState.brightness}%) contrast(${imageState.contrast}%) grayscale(${imageState.grayscale ? 100 : 0}%)`;
+
+  ctx.translate(imageCanvas.width / 2, imageCanvas.height / 2);
+  ctx.rotate(radians);
+  ctx.scale(imageState.flipX, imageState.flipY);
+  ctx.drawImage(loadedImage, -w / 2, -h / 2, w, h);
+  ctx.restore();
+}
+
+imageUpload.addEventListener("change", (event) => {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = () => {
+    const img = new Image();
+    img.onload = () => {
+      loadedImage = img;
+      resetImageState();
+      drawImageToCanvas();
+      setStatus("Image uploaded successfully.", "success");
+    };
+    img.src = reader.result;
+  };
+  reader.readAsDataURL(file);
+});
+
+rotateLeftBtn.addEventListener("click", () => {
+  if (!loadedImage) return setStatus("Upload image first.", "warning");
+  imageState.rotation = (imageState.rotation - 90 + 360) % 360;
+  drawImageToCanvas();
+});
+
+rotateRightBtn.addEventListener("click", () => {
+  if (!loadedImage) return setStatus("Upload image first.", "warning");
+  imageState.rotation = (imageState.rotation + 90) % 360;
+  drawImageToCanvas();
+});
+
+flipXBtn.addEventListener("click", () => {
+  if (!loadedImage) return setStatus("Upload image first.", "warning");
+  imageState.flipX *= -1;
+  drawImageToCanvas();
+});
+
+flipYBtn.addEventListener("click", () => {
+  if (!loadedImage) return setStatus("Upload image first.", "warning");
+  imageState.flipY *= -1;
+  drawImageToCanvas();
+});
+
+grayscaleBtn.addEventListener("click", () => {
+  if (!loadedImage) return setStatus("Upload image first.", "warning");
+  imageState.grayscale = !imageState.grayscale;
+  drawImageToCanvas();
+});
+
+brightnessRange.addEventListener("input", () => {
+  if (!loadedImage) return;
+  imageState.brightness = Number(brightnessRange.value);
+  drawImageToCanvas();
+});
+
+contrastRange.addEventListener("input", () => {
+  if (!loadedImage) return;
+  imageState.contrast = Number(contrastRange.value);
+  drawImageToCanvas();
+});
+
+resetImageBtn.addEventListener("click", () => {
+  if (!loadedImage) return setStatus("Upload image first.", "warning");
+  resetImageState();
+  drawImageToCanvas();
+  setStatus("Image reset.", "accent");
+});
+
+downloadImageBtn.addEventListener("click", () => {
+  if (!loadedImage) return setStatus("Upload image first.", "warning");
+
+  const link = document.createElement("a");
+  link.download = "edited-image.png";
+  link.href = imageCanvas.toDataURL("image/png");
+  link.click();
+  setStatus("Edited image downloaded.", "success");
 });
