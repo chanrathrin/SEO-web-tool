@@ -265,6 +265,7 @@ formatBtn.addEventListener("click", async () => {
     });
 
     const data = await response.json();
+
     if (!response.ok) {
       setStatus(data.error || "Something went wrong.", "warning");
       return;
@@ -530,15 +531,16 @@ function applyPreset(width, height) {
 
   tempCtx.drawImage(imageCanvas, offsetX, offsetY, drawW, drawH);
 
+  const dataUrl = tempCanvas.toDataURL("image/png");
   const img = new Image();
   img.onload = () => {
     loadedImage = img;
-    originalImageDataUrl = tempCanvas.toDataURL("image/png");
+    originalImageDataUrl = dataUrl;
     resetImageState();
     drawImageToCanvas();
     setStatus(`Preset applied: ${width}x${height}`, "success");
   };
-  img.src = tempCanvas.toDataURL("image/png");
+  img.src = dataUrl;
 }
 
 function getMousePos(evt) {
