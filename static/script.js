@@ -16,7 +16,6 @@ const seoNotes = document.getElementById("seoNotes");
 const seoTitleOptions = document.getElementById("seoTitleOptions");
 const metaOptions = document.getElementById("metaOptions");
 
-/* image editor */
 const imageUpload = document.getElementById("imageUpload");
 const imageCanvas = document.getElementById("imageCanvas");
 const rotateLeftBtn = document.getElementById("rotateLeftBtn");
@@ -28,12 +27,31 @@ const resetImageBtn = document.getElementById("resetImageBtn");
 const brightnessRange = document.getElementById("brightnessRange");
 const contrastRange = document.getElementById("contrastRange");
 const downloadImageBtn = document.getElementById("downloadImageBtn");
+const toggleCropBtn = document.getElementById("toggleCropBtn");
+const applyCropBtn = document.getElementById("applyCropBtn");
+const overlayTextInput = document.getElementById("overlayTextInput");
+const overlayFontSizeRange = document.getElementById("overlayFontSizeRange");
+const overlayColorInput = document.getElementById("overlayColorInput");
+const overlayXRange = document.getElementById("overlayXRange");
+const overlayYRange = document.getElementById("overlayYRange");
+const applyTextBtn = document.getElementById("applyTextBtn");
+const clearTextBtn = document.getElementById("clearTextBtn");
+const watermarkInput = document.getElementById("watermarkInput");
+const watermarkSizeRange = document.getElementById("watermarkSizeRange");
+const watermarkOpacityRange = document.getElementById("watermarkOpacityRange");
+const applyWatermarkBtn = document.getElementById("applyWatermarkBtn");
+const clearWatermarkBtn = document.getElementById("clearWatermarkBtn");
+const presetYoutubeBtn = document.getElementById("presetYoutubeBtn");
+const presetFacebookBtn = document.getElementById("presetFacebookBtn");
+const presetTikTokBtn = document.getElementById("presetTikTokBtn");
+const presetSquareBtn = document.getElementById("presetSquareBtn");
+const upscale2xBtn = document.getElementById("upscale2xBtn");
+const upscale4xBtn = document.getElementById("upscale4xBtn");
 
 let currentResult = {};
 
 function setStatus(message, type = "normal") {
   statusText.textContent = message;
-
   if (type === "success") statusText.style.color = "var(--success)";
   else if (type === "warning") statusText.style.color = "var(--warning)";
   else if (type === "accent") statusText.style.color = "var(--accent)";
@@ -205,9 +223,7 @@ async function exportFile(url, filename) {
   try {
     const response = await fetch(url, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(currentResult)
     });
 
@@ -232,7 +248,6 @@ async function exportFile(url, filename) {
 
 formatBtn.addEventListener("click", async () => {
   const article = articleInput.value.trim();
-
   if (!article) {
     setStatus("Please paste article content first.", "warning");
     return;
@@ -243,14 +258,11 @@ formatBtn.addEventListener("click", async () => {
   try {
     const response = await fetch("/format", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ article })
     });
 
     const data = await response.json();
-
     if (!response.ok) {
       setStatus(data.error || "Something went wrong.", "warning");
       return;
@@ -286,21 +298,17 @@ copyAllBtn.addEventListener("click", async () => {
     setStatus("No output to copy.", "warning");
     return;
   }
-
-  const text = buildCopyAllText(currentResult);
-  await copyText(text, "All output copied.");
+  await copyText(buildCopyAllText(currentResult), "All output copied.");
 });
 
 copyButtons.forEach((btn) => {
   btn.addEventListener("click", async () => {
     const section = btn.dataset.section;
     const value = currentResult[section];
-
     if (!value) {
       setStatus(`No content for ${section}.`, "warning");
       return;
     }
-
     await copyText(value, `${section} copied.`);
   });
 });
@@ -319,17 +327,31 @@ themeToggle.addEventListener("click", () => {
   setStatus(`Theme changed to ${isLight ? "light" : "dark"}.`, "accent");
 });
 
-/* image editor side */
+/* IMAGE EDITOR V5 */
 const ctx = imageCanvas.getContext("2d");
 let loadedImage = null;
+
 let imageState = {
   rotation: 0,
   flipX: 1,
   flipY: 1,
   grayscale: false,
   brightness: 100,
-  contrast: 100
+  contrast: 100,
+  overlayText: "",
+  overlayFontSize: 42,
+  overlayColor: "#ffffff",
+  overlayX: 50,
+  overlayY: 85,
+  watermarkText: "",
+  watermarkSize: 22,
+  watermarkOpacity: 35,
+  cropMode: false,
+  cropRect: { x: 80, y: 80, w: 260, h: 180 }
 };
+
+let dragMode = null;
+let dragOffset = { x: 0, y: 0 };
 
 function resetImageState() {
   imageState = {
@@ -338,10 +360,82 @@ function resetImageState() {
     flipY: 1,
     grayscale: false,
     brightness: 100,
-    contrast: 100
+    contrast: 100,
+    overlayText: "",
+    overlayFontSize: 42,
+    overlayColor: "#ffffff",
+    overlayX: 50,
+    overlayY: 85,
+    watermarkText: "",
+    watermarkSize: 22,
+    watermarkOpacity: 35,
+    cropMode: false,
+    cropRect: { x: 80, y: 80, w: 260, h: 180 }
   };
+
   brightnessRange.value = 100;
   contrastRange.value = 100;
+  overlayTextInput.value = "";
+  overlayFontSizeRange.value = 42;
+  overlayColorInput.value = "#ffffff";
+  overlayXRange.value = 50;
+  overlayYRange.value = 85;
+  watermarkInput.value = "";
+  watermarkSizeRange.value = 22;
+  watermarkOpacityRange.value = 35;
+}
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function drawCropOverlay() {
+  const { x, y, w, h } = imageState.cropRect;
+  ctx.save();
+  ctx.fillStyle = "rgba(0,0,0,0.35)";
+  ctx.fillRect(0, 0, imageCanvas.width, imageCanvas.height);
+  ctx.clearRect(x, y, w, h);
+  ctx.strokeStyle = "#5da9ff";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(x, y, w, h);
+
+  const handles = [
+    [x, y], [x + w, y], [x, y + h], [x + w, y + h]
+  ];
+
+  ctx.fillStyle = "#ffffff";
+  handles.forEach(([hx, hy]) => {
+    ctx.fillRect(hx - 6, hy - 6, 12, 12);
+  });
+  ctx.restore();
+}
+
+function drawTextOverlay() {
+  if (!imageState.overlayText) return;
+  ctx.save();
+  ctx.font = `bold ${imageState.overlayFontSize}px Segoe UI, Arial`;
+  ctx.fillStyle = imageState.overlayColor;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.lineWidth = 4;
+  ctx.strokeStyle = "rgba(0,0,0,0.45)";
+  const x = (imageState.overlayX / 100) * imageCanvas.width;
+  const y = (imageState.overlayY / 100) * imageCanvas.height;
+  ctx.strokeText(imageState.overlayText, x, y);
+  ctx.fillText(imageState.overlayText, x, y);
+  ctx.restore();
+}
+
+function drawWatermark() {
+  if (!imageState.watermarkText) return;
+  ctx.save();
+  ctx.globalAlpha = imageState.watermarkOpacity / 100;
+  ctx.font = `${imageState.watermarkSize}px Segoe UI, Arial`;
+  ctx.fillStyle = "#ffffff";
+  ctx.textAlign = "right";
+  ctx.textBaseline = "bottom";
+  ctx.fillText(imageState.watermarkText, imageCanvas.width - 20, imageCanvas.height - 20);
+  ctx.restore();
 }
 
 function drawImageToCanvas() {
@@ -352,7 +446,6 @@ function drawImageToCanvas() {
 
   const w = loadedImage.width;
   const h = loadedImage.height;
-
   const canvasW = rotated ? h : w;
   const canvasH = rotated ? w : h;
 
@@ -368,7 +461,191 @@ function drawImageToCanvas() {
   ctx.scale(imageState.flipX, imageState.flipY);
   ctx.drawImage(loadedImage, -w / 2, -h / 2, w, h);
   ctx.restore();
+
+  drawTextOverlay();
+  drawWatermark();
+
+  if (imageState.cropMode) {
+    drawCropOverlay();
+  }
 }
+
+function commitCanvasAsImage() {
+  const img = new Image();
+  img.onload = () => {
+    loadedImage = img;
+    imageState.rotation = 0;
+    imageState.flipX = 1;
+    imageState.flipY = 1;
+    imageState.grayscale = false;
+    imageState.brightness = 100;
+    imageState.contrast = 100;
+    drawImageToCanvas();
+  };
+  img.src = imageCanvas.toDataURL("image/png");
+}
+
+function applyPreset(width, height) {
+  if (!loadedImage) {
+    setStatus("Upload image first.", "warning");
+    return;
+  }
+
+  const tempCanvas = document.createElement("canvas");
+  const tempCtx = tempCanvas.getContext("2d");
+  tempCanvas.width = width;
+  tempCanvas.height = height;
+
+  tempCtx.imageSmoothingEnabled = true;
+  tempCtx.imageSmoothingQuality = "high";
+
+  const srcRatio = imageCanvas.width / imageCanvas.height;
+  const destRatio = width / height;
+
+  let drawW, drawH, offsetX, offsetY;
+  if (srcRatio > destRatio) {
+    drawH = height;
+    drawW = drawH * srcRatio;
+    offsetX = (width - drawW) / 2;
+    offsetY = 0;
+  } else {
+    drawW = width;
+    drawH = drawW / srcRatio;
+    offsetX = 0;
+    offsetY = (height - drawH) / 2;
+  }
+
+  tempCtx.drawImage(imageCanvas, offsetX, offsetY, drawW, drawH);
+
+  const img = new Image();
+  img.onload = () => {
+    loadedImage = img;
+    resetImageState();
+    drawImageToCanvas();
+    setStatus(`Preset applied: ${width}x${height}`, "success");
+  };
+  img.src = tempCanvas.toDataURL("image/png");
+}
+
+function upscaleSmooth(scale) {
+  if (!loadedImage) {
+    setStatus("Upload image first.", "warning");
+    return;
+  }
+
+  const src = imageCanvas;
+  const tempCanvas = document.createElement("canvas");
+  const tempCtx = tempCanvas.getContext("2d");
+
+  tempCanvas.width = src.width * scale;
+  tempCanvas.height = src.height * scale;
+
+  tempCtx.imageSmoothingEnabled = true;
+  tempCtx.imageSmoothingQuality = "high";
+  tempCtx.drawImage(src, 0, 0, tempCanvas.width, tempCanvas.height);
+
+  // mild sharpen
+  const imgData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
+  const data = imgData.data;
+  for (let i = 0; i < data.length; i += 4) {
+    data[i] = clamp(data[i] * 1.02, 0, 255);
+    data[i + 1] = clamp(data[i + 1] * 1.02, 0, 255);
+    data[i + 2] = clamp(data[i + 2] * 1.02, 0, 255);
+  }
+  tempCtx.putImageData(imgData, 0, 0);
+
+  const img = new Image();
+  img.onload = () => {
+    loadedImage = img;
+    resetImageState();
+    drawImageToCanvas();
+    setStatus(`Smooth upscale ${scale}x applied.`, "success");
+  };
+  img.src = tempCanvas.toDataURL("image/png");
+}
+
+function getMousePos(evt) {
+  const rect = imageCanvas.getBoundingClientRect();
+  const scaleX = imageCanvas.width / rect.width;
+  const scaleY = imageCanvas.height / rect.height;
+
+  return {
+    x: (evt.clientX - rect.left) * scaleX,
+    y: (evt.clientY - rect.top) * scaleY
+  };
+}
+
+function getCropHandle(pos) {
+  const { x, y, w, h } = imageState.cropRect;
+  const handles = {
+    tl: { x, y },
+    tr: { x: x + w, y },
+    bl: { x, y: y + h },
+    br: { x: x + w, y: y + h }
+  };
+
+  for (const key in handles) {
+    const hx = handles[key].x;
+    const hy = handles[key].y;
+    if (Math.abs(pos.x - hx) <= 12 && Math.abs(pos.y - hy) <= 12) {
+      return key;
+    }
+  }
+
+  if (pos.x >= x && pos.x <= x + w && pos.y >= y && pos.y <= y + h) {
+    return "move";
+  }
+
+  return null;
+}
+
+imageCanvas.addEventListener("mousedown", (evt) => {
+  if (!loadedImage || !imageState.cropMode) return;
+  const pos = getMousePos(evt);
+  const handle = getCropHandle(pos);
+  if (!handle) return;
+
+  dragMode = handle;
+  dragOffset.x = pos.x;
+  dragOffset.y = pos.y;
+});
+
+imageCanvas.addEventListener("mousemove", (evt) => {
+  if (!loadedImage || !imageState.cropMode || !dragMode) return;
+  const pos = getMousePos(evt);
+  const dx = pos.x - dragOffset.x;
+  const dy = pos.y - dragOffset.y;
+  const rect = imageState.cropRect;
+  const minSize = 40;
+
+  if (dragMode === "move") {
+    rect.x = clamp(rect.x + dx, 0, imageCanvas.width - rect.w);
+    rect.y = clamp(rect.y + dy, 0, imageCanvas.height - rect.h);
+  } else if (dragMode === "tl") {
+    rect.x = clamp(rect.x + dx, 0, rect.x + rect.w - minSize);
+    rect.y = clamp(rect.y + dy, 0, rect.y + rect.h - minSize);
+    rect.w = rect.w - dx;
+    rect.h = rect.h - dy;
+  } else if (dragMode === "tr") {
+    rect.y = clamp(rect.y + dy, 0, rect.y + rect.h - minSize);
+    rect.w = clamp(rect.w + dx, minSize, imageCanvas.width - rect.x);
+    rect.h = rect.h - dy;
+  } else if (dragMode === "bl") {
+    rect.x = clamp(rect.x + dx, 0, rect.x + rect.w - minSize);
+    rect.w = rect.w - dx;
+    rect.h = clamp(rect.h + dy, minSize, imageCanvas.height - rect.y);
+  } else if (dragMode === "br") {
+    rect.w = clamp(rect.w + dx, minSize, imageCanvas.width - rect.x);
+    rect.h = clamp(rect.h + dy, minSize, imageCanvas.height - rect.y);
+  }
+
+  dragOffset = pos;
+  drawImageToCanvas();
+});
+
+window.addEventListener("mouseup", () => {
+  dragMode = null;
+});
 
 imageUpload.addEventListener("change", (event) => {
   const file = event.target.files[0];
@@ -380,6 +657,12 @@ imageUpload.addEventListener("change", (event) => {
     img.onload = () => {
       loadedImage = img;
       resetImageState();
+      imageState.cropRect = {
+        x: img.width * 0.15,
+        y: img.height * 0.15,
+        w: img.width * 0.7,
+        h: img.height * 0.7
+      };
       drawImageToCanvas();
       setStatus("Image uploaded successfully.", "success");
     };
@@ -437,9 +720,78 @@ resetImageBtn.addEventListener("click", () => {
   setStatus("Image reset.", "accent");
 });
 
-downloadImageBtn.addEventListener("click", () => {
+toggleCropBtn.addEventListener("click", () => {
+  if (!loadedImage) return setStatus("Upload image first.", "warning");
+  imageState.cropMode = !imageState.cropMode;
+  drawImageToCanvas();
+  setStatus(`Crop mode ${imageState.cropMode ? "enabled" : "disabled"}.`, "accent");
+});
+
+applyCropBtn.addEventListener("click", () => {
   if (!loadedImage) return setStatus("Upload image first.", "warning");
 
+  const { x, y, w, h } = imageState.cropRect;
+  const tempCanvas = document.createElement("canvas");
+  const tempCtx = tempCanvas.getContext("2d");
+  tempCanvas.width = Math.round(w);
+  tempCanvas.height = Math.round(h);
+  tempCtx.drawImage(imageCanvas, x, y, w, h, 0, 0, tempCanvas.width, tempCanvas.height);
+
+  const img = new Image();
+  img.onload = () => {
+    loadedImage = img;
+    imageState.cropMode = false;
+    imageState.cropRect = { x: 40, y: 40, w: img.width * 0.7, h: img.height * 0.7 };
+    drawImageToCanvas();
+    setStatus("Crop applied.", "success");
+  };
+  img.src = tempCanvas.toDataURL("image/png");
+});
+
+applyTextBtn.addEventListener("click", () => {
+  if (!loadedImage) return setStatus("Upload image first.", "warning");
+  imageState.overlayText = overlayTextInput.value.trim();
+  imageState.overlayFontSize = Number(overlayFontSizeRange.value);
+  imageState.overlayColor = overlayColorInput.value;
+  imageState.overlayX = Number(overlayXRange.value);
+  imageState.overlayY = Number(overlayYRange.value);
+  drawImageToCanvas();
+  setStatus("Text overlay applied.", "success");
+});
+
+clearTextBtn.addEventListener("click", () => {
+  imageState.overlayText = "";
+  overlayTextInput.value = "";
+  drawImageToCanvas();
+  setStatus("Text overlay cleared.", "accent");
+});
+
+applyWatermarkBtn.addEventListener("click", () => {
+  if (!loadedImage) return setStatus("Upload image first.", "warning");
+  imageState.watermarkText = watermarkInput.value.trim();
+  imageState.watermarkSize = Number(watermarkSizeRange.value);
+  imageState.watermarkOpacity = Number(watermarkOpacityRange.value);
+  drawImageToCanvas();
+  setStatus("Watermark applied.", "success");
+});
+
+clearWatermarkBtn.addEventListener("click", () => {
+  imageState.watermarkText = "";
+  watermarkInput.value = "";
+  drawImageToCanvas();
+  setStatus("Watermark cleared.", "accent");
+});
+
+presetYoutubeBtn.addEventListener("click", () => applyPreset(1280, 720));
+presetFacebookBtn.addEventListener("click", () => applyPreset(1200, 630));
+presetTikTokBtn.addEventListener("click", () => applyPreset(1080, 1920));
+presetSquareBtn.addEventListener("click", () => applyPreset(1080, 1080));
+
+upscale2xBtn.addEventListener("click", () => upscaleSmooth(2));
+upscale4xBtn.addEventListener("click", () => upscaleSmooth(4));
+
+downloadImageBtn.addEventListener("click", () => {
+  if (!loadedImage) return setStatus("Upload image first.", "warning");
   const link = document.createElement("a");
   link.download = "edited-image.png";
   link.href = imageCanvas.toDataURL("image/png");
