@@ -45,8 +45,10 @@ const presetYoutubeBtn = document.getElementById("presetYoutubeBtn");
 const presetFacebookBtn = document.getElementById("presetFacebookBtn");
 const presetTikTokBtn = document.getElementById("presetTikTokBtn");
 const presetSquareBtn = document.getElementById("presetSquareBtn");
-const upscale2xBtn = document.getElementById("upscale2xBtn");
-const upscale4xBtn = document.getElementById("upscale4xBtn");
+const upscaleScaleSelect = document.getElementById("upscaleScaleSelect");
+const upscaleCleanModeSelect = document.getElementById("upscaleCleanModeSelect");
+const upscaleFormatSelect = document.getElementById("upscaleFormatSelect");
+const upscaleSmoothBtn = document.getElementById("upscaleSmoothBtn");
 
 let currentResult = {};
 
@@ -327,7 +329,7 @@ themeToggle.addEventListener("click", () => {
   setStatus(`Theme changed to ${isLight ? "light" : "dark"}.`, "accent");
 });
 
-/* IMAGE EDITOR V5 */
+/* IMAGE EDITOR */
 const ctx = imageCanvas.getContext("2d");
 let loadedImage = null;
 
@@ -352,6 +354,10 @@ let imageState = {
 
 let dragMode = null;
 let dragOffset = { x: 0, y: 0 };
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
 
 function resetImageState() {
   imageState = {
@@ -385,12 +391,9 @@ function resetImageState() {
   watermarkOpacityRange.value = 35;
 }
 
-function clamp(value, min, max) {
-  return Math.max(min, Math.min(max, value));
-}
-
 function drawCropOverlay() {
   const { x, y, w, h } = imageState.cropRect;
+
   ctx.save();
   ctx.fillStyle = "rgba(0,0,0,0.35)";
   ctx.fillRect(0, 0, imageCanvas.width, imageCanvas.height);
@@ -407,11 +410,13 @@ function drawCropOverlay() {
   handles.forEach(([hx, hy]) => {
     ctx.fillRect(hx - 6, hy - 6, 12, 12);
   });
+
   ctx.restore();
 }
 
 function drawTextOverlay() {
   if (!imageState.overlayText) return;
+
   ctx.save();
   ctx.font = `bold ${imageState.overlayFontSize}px Segoe UI, Arial`;
   ctx.fillStyle = imageState.overlayColor;
@@ -428,6 +433,7 @@ function drawTextOverlay() {
 
 function drawWatermark() {
   if (!imageState.watermarkText) return;
+
   ctx.save();
   ctx.globalAlpha = imageState.watermarkOpacity / 100;
   ctx.font = `${imageState.watermarkSize}px Segoe UI, Arial`;
@@ -470,7 +476,11 @@ function drawImageToCanvas() {
   }
 }
 
-function commitCanvasAsImage() {
+function getCanvasImageData() {
+  return imageCanvas.toDataURL("image/png");
+}
+
+function loadImageFromDataUrl(dataUrl, successMessage = "Image updated.") {
   const img = new Image();
   img.onload = () => {
     loadedImage = img;
@@ -480,9 +490,11 @@ function commitCanvasAsImage() {
     imageState.grayscale = false;
     imageState.brightness = 100;
     imageState.contrast = 100;
+    imageState.cropMode = false;
     drawImageToCanvas();
+    setStatus(successMessage, "success");
   };
-  img.src = imageCanvas.toDataURL("image/png");
+  img.src = dataUrl;
 }
 
 function applyPreset(width, height) {
@@ -523,43 +535,6 @@ function applyPreset(width, height) {
     resetImageState();
     drawImageToCanvas();
     setStatus(`Preset applied: ${width}x${height}`, "success");
-  };
-  img.src = tempCanvas.toDataURL("image/png");
-}
-
-function upscaleSmooth(scale) {
-  if (!loadedImage) {
-    setStatus("Upload image first.", "warning");
-    return;
-  }
-
-  const src = imageCanvas;
-  const tempCanvas = document.createElement("canvas");
-  const tempCtx = tempCanvas.getContext("2d");
-
-  tempCanvas.width = src.width * scale;
-  tempCanvas.height = src.height * scale;
-
-  tempCtx.imageSmoothingEnabled = true;
-  tempCtx.imageSmoothingQuality = "high";
-  tempCtx.drawImage(src, 0, 0, tempCanvas.width, tempCanvas.height);
-
-  // mild sharpen
-  const imgData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
-  const data = imgData.data;
-  for (let i = 0; i < data.length; i += 4) {
-    data[i] = clamp(data[i] * 1.02, 0, 255);
-    data[i + 1] = clamp(data[i + 1] * 1.02, 0, 255);
-    data[i + 2] = clamp(data[i + 2] * 1.02, 0, 255);
-  }
-  tempCtx.putImageData(imgData, 0, 0);
-
-  const img = new Image();
-  img.onload = () => {
-    loadedImage = img;
-    resetImageState();
-    drawImageToCanvas();
-    setStatus(`Smooth upscale ${scale}x applied.`, "success");
   };
   img.src = tempCanvas.toDataURL("image/png");
 }
@@ -606,12 +581,12 @@ imageCanvas.addEventListener("mousedown", (evt) => {
   if (!handle) return;
 
   dragMode = handle;
-  dragOffset.x = pos.x;
-  dragOffset.y = pos.y;
+  dragOffset = pos;
 });
 
 imageCanvas.addEventListener("mousemove", (evt) => {
   if (!loadedImage || !imageState.cropMode || !dragMode) return;
+
   const pos = getMousePos(evt);
   const dx = pos.x - dragOffset.x;
   const dy = pos.y - dragOffset.y;
@@ -622,18 +597,24 @@ imageCanvas.addEventListener("mousemove", (evt) => {
     rect.x = clamp(rect.x + dx, 0, imageCanvas.width - rect.w);
     rect.y = clamp(rect.y + dy, 0, imageCanvas.height - rect.h);
   } else if (dragMode === "tl") {
-    rect.x = clamp(rect.x + dx, 0, rect.x + rect.w - minSize);
-    rect.y = clamp(rect.y + dy, 0, rect.y + rect.h - minSize);
-    rect.w = rect.w - dx;
-    rect.h = rect.h - dy;
+    const newX = clamp(rect.x + dx, 0, rect.x + rect.w - minSize);
+    const newY = clamp(rect.y + dy, 0, rect.y + rect.h - minSize);
+    rect.w = rect.w + (rect.x - newX);
+    rect.h = rect.h + (rect.y - newY);
+    rect.x = newX;
+    rect.y = newY;
   } else if (dragMode === "tr") {
-    rect.y = clamp(rect.y + dy, 0, rect.y + rect.h - minSize);
-    rect.w = clamp(rect.w + dx, minSize, imageCanvas.width - rect.x);
-    rect.h = rect.h - dy;
+    const newY = clamp(rect.y + dy, 0, rect.y + rect.h - minSize);
+    const newW = clamp(rect.w + dx, minSize, imageCanvas.width - rect.x);
+    rect.h = rect.h + (rect.y - newY);
+    rect.y = newY;
+    rect.w = newW;
   } else if (dragMode === "bl") {
-    rect.x = clamp(rect.x + dx, 0, rect.x + rect.w - minSize);
-    rect.w = rect.w - dx;
-    rect.h = clamp(rect.h + dy, minSize, imageCanvas.height - rect.y);
+    const newX = clamp(rect.x + dx, 0, rect.x + rect.w - minSize);
+    const newH = clamp(rect.h + dy, minSize, imageCanvas.height - rect.y);
+    rect.w = rect.w + (rect.x - newX);
+    rect.x = newX;
+    rect.h = newH;
   } else if (dragMode === "br") {
     rect.w = clamp(rect.w + dx, minSize, imageCanvas.width - rect.x);
     rect.h = clamp(rect.h + dy, minSize, imageCanvas.height - rect.y);
@@ -787,8 +768,43 @@ presetFacebookBtn.addEventListener("click", () => applyPreset(1200, 630));
 presetTikTokBtn.addEventListener("click", () => applyPreset(1080, 1920));
 presetSquareBtn.addEventListener("click", () => applyPreset(1080, 1080));
 
-upscale2xBtn.addEventListener("click", () => upscaleSmooth(2));
-upscale4xBtn.addEventListener("click", () => upscaleSmooth(4));
+upscaleSmoothBtn.addEventListener("click", async () => {
+  if (!loadedImage) {
+    setStatus("Upload image first.", "warning");
+    return;
+  }
+
+  try {
+    setStatus("Running UpscaleAI Smooth...", "accent");
+
+    const response = await fetch("/image/upscale-smooth", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        image: getCanvasImageData(),
+        scale: Number(upscaleScaleSelect.value),
+        clean_mode: upscaleCleanModeSelect.value,
+        output_format: upscaleFormatSelect.value
+      })
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      setStatus(data.error || "Upscale failed.", "warning");
+      return;
+    }
+
+    loadImageFromDataUrl(
+      data.image,
+      `UpscaleAI Smooth done: ${data.scale}x ${data.clean_mode}`
+    );
+  } catch {
+    setStatus("Upscale request failed.", "warning");
+  }
+});
 
 downloadImageBtn.addEventListener("click", () => {
   if (!loadedImage) return setStatus("Upload image first.", "warning");
