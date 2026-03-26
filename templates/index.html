@@ -11,7 +11,7 @@
     <header class="topbar">
       <div>
         <h1>SEO Content Formatter V5 SMART</h1>
-        <p>Smarter SEO logic • Better titles • Better meta • Image editor PRO</p>
+        <p>Smarter SEO logic • Better titles • Better meta • Clean image editor</p>
       </div>
       <button id="themeToggle" class="btn btn-primary">Toggle Theme</button>
     </header>
@@ -129,7 +129,7 @@
       <div class="card-head">
         <div>
           <h2>Image Editor PRO</h2>
-          <p>Crop • Text overlay • Watermark • Preset sizes • Smooth upscale</p>
+          <p>Crop • Text overlay • Watermark • Preset sizes • UpscaleAI Smooth</p>
         </div>
       </div>
 
@@ -138,7 +138,7 @@
           <input type="file" id="imageUpload" accept="image/*" class="file-input" />
           <canvas id="imageCanvas" class="image-canvas"></canvas>
           <div class="image-help">
-            Upload image to start editing. Drag crop box to move. Use handles to resize.
+            Upload image to start editing. Drag crop box to move. Use corners to resize.
           </div>
         </div>
 
@@ -232,10 +232,43 @@
           </div>
 
           <div class="control-group">
-            <div class="control-title">Smooth Upscale</div>
+            <div class="control-title">UpscaleAI Smooth</div>
+            <div class="two-col">
+              <div>
+                <label class="mini-label">Scale</label>
+                <select id="upscaleScaleSelect" class="text-input">
+                  <option value="2">2x</option>
+                  <option value="3">3x</option>
+                  <option value="4">4x</option>
+                </select>
+              </div>
+              <div>
+                <label class="mini-label">Clean Mode</label>
+                <select id="upscaleCleanModeSelect" class="text-input">
+                  <option value="soft">Soft</option>
+                  <option value="balanced" selected>Balanced</option>
+                  <option value="cleanest">Cleanest</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="two-col">
+              <div>
+                <label class="mini-label">Save As</label>
+                <select id="upscaleFormatSelect" class="text-input">
+                  <option value="png" selected>PNG</option>
+                  <option value="jpg">JPG</option>
+                  <option value="webp">WEBP</option>
+                </select>
+              </div>
+              <div class="upscale-note-box">
+                <div class="mini-label">Mode</div>
+                <div class="image-help">Clean website upscale version.</div>
+              </div>
+            </div>
+
             <div class="button-row">
-              <button id="upscale2xBtn" class="btn btn-secondary">Upscale 2x</button>
-              <button id="upscale4xBtn" class="btn btn-secondary">Upscale 4x</button>
+              <button id="upscaleSmoothBtn" class="btn btn-primary">Run UpscaleAI Smooth</button>
             </div>
           </div>
 
