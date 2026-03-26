@@ -367,10 +367,7 @@ def get_seo_score(seo_title, meta_description, focus_keyphrase):
     else:
         notes.append("Add the focus keyphrase to meta description.")
 
-    return {
-        "score": score,
-        "notes": notes
-    }
+    return {"score": score, "notes": notes}
 
 
 def format_seo_article(article):
@@ -513,42 +510,63 @@ def decode_base64_image(data_url: str) -> Image.Image:
 
 def encode_image_to_base64(image: Image.Image, fmt: str = "PNG") -> str:
     buffer = BytesIO()
-    image.save(buffer, format=fmt)
+    save_kwargs = {}
+    fmt_upper = fmt.upper()
+
+    if fmt_upper == "JPEG":
+        save_kwargs["quality"] = 95
+        save_kwargs["optimize"] = True
+    elif fmt_upper == "WEBP":
+        save_kwargs["quality"] = 95
+        save_kwargs["method"] = 6
+
+    image.save(buffer, format=fmt_upper, **save_kwargs)
     encoded = base64.b64encode(buffer.getvalue()).decode("utf-8")
-    mime = "image/png" if fmt.upper() == "PNG" else "image/jpeg" if fmt.upper() == "JPEG" else "image/webp"
+
+    if fmt_upper == "PNG":
+        mime = "image/png"
+    elif fmt_upper == "JPEG":
+        mime = "image/jpeg"
+    else:
+        mime = "image/webp"
+
     return f"data:{mime};base64,{encoded}"
 
 
 def upscale_smooth_image(image: Image.Image, scale: int, clean_mode: str = "balanced") -> Image.Image:
     image = ImageOps.exif_transpose(image)
 
-    if image.mode not in ("RGB", "RGBA", "L"):
+    if image.mode not in ("RGB", "RGBA"):
         image = image.convert("RGBA") if "A" in image.getbands() else image.convert("RGB")
 
     target_size = (image.width * scale, image.height * scale)
 
     current = image
-    while current.width * 1.8 < target_size[0] or current.height * 1.8 < target_size[1]:
-        next_size = (
-            min(target_size[0], int(current.width * 1.8)),
-            min(target_size[1], int(current.height * 1.8)),
-        )
-        current = current.resize(next_size, Image.Resampling.LANCZOS)
+    while current.width < target_size[0] or current.height < target_size[1]:
+        next_w = min(target_size[0], int(current.width * 1.6))
+        next_h = min(target_size[1], int(current.height * 1.6))
+        current = current.resize((next_w, next_h), Image.Resampling.LANCZOS)
+        current = current.filter(ImageFilter.UnsharpMask(radius=1.2, percent=115, threshold=2))
 
     if current.size != target_size:
         current = current.resize(target_size, Image.Resampling.LANCZOS)
 
     if clean_mode == "soft":
         current = current.filter(ImageFilter.SMOOTH_MORE)
-        current = ImageEnhance.Sharpness(current).enhance(1.05)
+        current = current.filter(ImageFilter.UnsharpMask(radius=1.0, percent=105, threshold=2))
+        current = ImageEnhance.Contrast(current).enhance(1.02)
+
     elif clean_mode == "balanced":
         current = current.filter(ImageFilter.SMOOTH)
-        current = ImageEnhance.Sharpness(current).enhance(1.12)
-        current = ImageEnhance.Contrast(current).enhance(1.03)
+        current = current.filter(ImageFilter.UnsharpMask(radius=1.4, percent=135, threshold=2))
+        current = ImageEnhance.Contrast(current).enhance(1.05)
+        current = ImageEnhance.Sharpness(current).enhance(1.10)
+
     elif clean_mode == "cleanest":
-        current = current.filter(ImageFilter.SMOOTH_MORE)
-        current = ImageEnhance.Sharpness(current).enhance(1.22)
-        current = ImageEnhance.Contrast(current).enhance(1.06)
+        current = current.filter(ImageFilter.MedianFilter(size=3))
+        current = current.filter(ImageFilter.UnsharpMask(radius=1.8, percent=155, threshold=2))
+        current = ImageEnhance.Contrast(current).enhance(1.08)
+        current = ImageEnhance.Sharpness(current).enhance(1.16)
 
     return current
 
