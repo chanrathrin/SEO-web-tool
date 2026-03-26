@@ -44,7 +44,7 @@ html, body {
 
 body { min-height: 100vh; }
 
-button, textarea, input { font: inherit; }
+button, textarea, input, select { font: inherit; }
 
 .app-shell {
   width: min(1450px, 96%);
@@ -316,6 +316,14 @@ button, textarea, input { font: inherit; }
 }
 
 input[type="range"] { width: 100%; }
+
+.upscale-note-box {
+  background: var(--input-bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px;
+  min-height: 74px;
+}
 
 .statusbar {
   background: var(--panel);
