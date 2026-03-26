@@ -42,7 +42,7 @@ def split_sentences(text):
     text = re.sub(r"\s+", " ", text).strip()
     if not text:
         return []
-    sentences = re.split(r'(?<=[.!?])\s+', text)
+    sentences = re.split(r"(?<=[.!?])\s+", text)
     return [s.strip() for s in sentences if s.strip()]
 
 
@@ -144,7 +144,6 @@ def extract_title(paragraphs):
     candidate = sentences[0] if sentences else first
     candidate = re.sub(r"^[\"'“”‘’\-–—:;\s]+", "", candidate).strip()
     candidate = smart_truncate(candidate, 72, add_ellipsis=False)
-
     return candidate if candidate else "SEO Article"
 
 
@@ -376,7 +375,6 @@ def format_seo_article(article):
 
     title = extract_title(paragraphs)
     focus_keyphrase = create_focus_keyphrase(title, article)
-
     seo_title_options = create_seo_title_options(title, focus_keyphrase)
     meta_description_options = create_meta_description_options(article, focus_keyphrase)
 
@@ -510,15 +508,18 @@ def decode_base64_image(data_url: str) -> Image.Image:
 
 def encode_image_to_base64(image: Image.Image, fmt: str = "PNG") -> str:
     buffer = BytesIO()
-    save_kwargs = {}
     fmt_upper = fmt.upper()
+    save_kwargs = {}
 
     if fmt_upper == "JPEG":
-        save_kwargs["quality"] = 95
+        save_kwargs["quality"] = 97
         save_kwargs["optimize"] = True
+        save_kwargs["subsampling"] = 0
     elif fmt_upper == "WEBP":
-        save_kwargs["quality"] = 95
+        save_kwargs["quality"] = 98
         save_kwargs["method"] = 6
+    elif fmt_upper == "PNG":
+        save_kwargs["compress_level"] = 1
 
     image.save(buffer, format=fmt_upper, **save_kwargs)
     encoded = base64.b64encode(buffer.getvalue()).decode("utf-8")
@@ -540,33 +541,34 @@ def upscale_smooth_image(image: Image.Image, scale: int, clean_mode: str = "bala
         image = image.convert("RGBA") if "A" in image.getbands() else image.convert("RGB")
 
     target_size = (image.width * scale, image.height * scale)
-
     current = image
+
     while current.width < target_size[0] or current.height < target_size[1]:
-        next_w = min(target_size[0], int(current.width * 1.6))
-        next_h = min(target_size[1], int(current.height * 1.6))
+        next_w = min(target_size[0], int(current.width * 1.5))
+        next_h = min(target_size[1], int(current.height * 1.5))
         current = current.resize((next_w, next_h), Image.Resampling.LANCZOS)
-        current = current.filter(ImageFilter.UnsharpMask(radius=1.2, percent=115, threshold=2))
+        current = current.filter(ImageFilter.UnsharpMask(radius=1.5, percent=140, threshold=2))
 
     if current.size != target_size:
         current = current.resize(target_size, Image.Resampling.LANCZOS)
 
     if clean_mode == "soft":
-        current = current.filter(ImageFilter.SMOOTH_MORE)
-        current = current.filter(ImageFilter.UnsharpMask(radius=1.0, percent=105, threshold=2))
-        current = ImageEnhance.Contrast(current).enhance(1.02)
+        current = current.filter(ImageFilter.SMOOTH)
+        current = current.filter(ImageFilter.UnsharpMask(radius=1.2, percent=120, threshold=2))
+        current = ImageEnhance.Contrast(current).enhance(1.04)
+        current = ImageEnhance.Sharpness(current).enhance(1.08)
 
     elif clean_mode == "balanced":
-        current = current.filter(ImageFilter.SMOOTH)
-        current = current.filter(ImageFilter.UnsharpMask(radius=1.4, percent=135, threshold=2))
-        current = ImageEnhance.Contrast(current).enhance(1.05)
-        current = ImageEnhance.Sharpness(current).enhance(1.10)
+        current = current.filter(ImageFilter.UnsharpMask(radius=1.8, percent=160, threshold=2))
+        current = ImageEnhance.Contrast(current).enhance(1.08)
+        current = ImageEnhance.Sharpness(current).enhance(1.18)
 
     elif clean_mode == "cleanest":
         current = current.filter(ImageFilter.MedianFilter(size=3))
-        current = current.filter(ImageFilter.UnsharpMask(radius=1.8, percent=155, threshold=2))
-        current = ImageEnhance.Contrast(current).enhance(1.08)
-        current = ImageEnhance.Sharpness(current).enhance(1.16)
+        current = current.filter(ImageFilter.UnsharpMask(radius=2.0, percent=190, threshold=2))
+        current = ImageEnhance.Contrast(current).enhance(1.12)
+        current = ImageEnhance.Sharpness(current).enhance(1.25)
+        current = ImageEnhance.Color(current).enhance(1.03)
 
     return current
 
