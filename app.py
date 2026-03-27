@@ -1,733 +1,729 @@
-from flask import Flask, render_template, request, jsonify, send_file
-from io import BytesIO
-import re
 import base64
+import html
+import io
+import os
+import re
+from difflib import SequenceMatcher
 
-from PIL import Image, ImageEnhance, ImageOps, ImageFilter
-
-try:
-    from docx import Document
-    DOCX_AVAILABLE = True
-except Exception:
-    DOCX_AVAILABLE = False
+from flask import Flask, jsonify, render_template, request, send_file
+from PIL import Image
 
 app = Flask(__name__)
-
-STOP_WORDS = {
-    "the", "a", "an", "and", "or", "but", "if", "then", "than", "for", "with",
-    "without", "to", "from", "of", "in", "on", "at", "by", "is", "are", "was",
-    "were", "be", "been", "being", "that", "this", "these", "those", "it",
-    "its", "as", "about", "into", "over", "after", "before", "through", "under",
-    "between", "during", "including", "until", "against", "among", "within",
-    "news", "update", "latest"
-}
-
-SUPPORTED_IMAGE_FORMATS = {"png", "jpg", "jpeg", "webp"}
+app.config["MAX_CONTENT_LENGTH"] = 20 * 1024 * 1024  # 20MB
 
 
-def clean_text(text):
-    text = text.strip()
-    text = re.sub(r"\r\n", "\n", text)
-    text = re.sub(r"\n{3,}", "\n\n", text)
+# =========================
+# TEXT / SEO HELPERS
+# =========================
+def clean_lines(text: str):
+    text = (text or "").replace("\r\n", "\n").replace("\r", "\n")
+    text = re.sub(r"\u00a0", " ", text)
     text = re.sub(r"[ \t]+", " ", text)
+    raw_lines = [line.strip() for line in text.split("\n")]
+    cleaned = []
+    last_blank = True
+
+    for line in raw_lines:
+        if not line:
+            if not last_blank:
+                cleaned.append("")
+            last_blank = True
+            continue
+        cleaned.append(line)
+        last_blank = False
+
+    while cleaned and cleaned[-1] == "":
+        cleaned.pop()
+
+    return cleaned
+
+
+def strip_internal_seo_lines(lines):
+    seo_prefixes = (
+        "Focus Keyphrase:",
+        "SEO Title:",
+        "Meta Description:",
+        "Slug (URL):",
+        "Slug:",
+        "Short Summary:",
+    )
+    cleaned = []
+    for line in lines:
+        s = line.strip()
+        if any(s.startswith(prefix) for prefix in seo_prefixes):
+            continue
+        cleaned.append(line)
+    while cleaned and cleaned[-1] == "":
+        cleaned.pop()
+    return cleaned
+
+
+def trim_at_word_boundary(text: str, limit: int):
+    text = re.sub(r"\s+", " ", (text or "")).strip()
+    if len(text) <= limit:
+        return text
+    cut = text[:limit].rstrip()
+    if " " in cut:
+        cut = cut.rsplit(" ", 1)[0]
+    return cut.rstrip(" ,.-:;")
+
+
+def guess_title(lines):
+    if not lines:
+        return "Untitled Article"
+    title = lines[0].strip()
+    return title[:140].strip() if len(title) > 140 else title
+
+
+def build_intro(lines):
+    content = [line for line in lines[1:] if line.strip()]
+    if not content:
+        return ""
+    intro_parts = []
+    for line in content:
+        intro_parts.append(line)
+        joined = " ".join(intro_parts).strip()
+        if len(joined) >= 180 or line.endswith((".", "!", "?")):
+            break
+    return trim_at_word_boundary(" ".join(intro_parts).strip(), 240)
+
+
+def split_body_into_sections(lines, num_sections=3):
+    content_lines = [line.strip() for line in lines[1:] if line.strip()]
+    if not content_lines:
+        return []
+
+    paragraphs = []
+    current = []
+    for line in lines[1:]:
+        if not line.strip():
+            if current:
+                paragraphs.append(" ".join(current).strip())
+                current = []
+        else:
+            current.append(line.strip())
+
+    if current:
+        paragraphs.append(" ".join(current).strip())
+
+    blocks = [p for p in paragraphs if p] or content_lines
+    if len(blocks) <= num_sections:
+        return blocks[:num_sections]
+
+    target = min(num_sections, len(blocks))
+    base = len(blocks) // target
+    extra = len(blocks) % target
+    sections = []
+    idx = 0
+
+    for i in range(target):
+        take = base + (1 if i < extra else 0)
+        chunk = blocks[idx:idx + take]
+        idx += take
+        merged = "\n\n".join(chunk).strip()
+        if merged:
+            sections.append(merged)
+
+    return sections[:num_sections]
+
+
+def clean_heading_candidate(text):
+    text = re.sub(r"\s+", " ", text).strip()
+    text = text.strip(' "\'“”‘’.,:;!?-')
+    text = re.sub(r"^[^A-Za-z0-9]+", "", text)
+    text = re.sub(r"[^A-Za-z0-9]+$", "", text)
     return text
 
 
-def split_paragraphs(text):
-    paragraphs = [p.strip() for p in text.split("\n") if p.strip()]
-    return paragraphs if paragraphs else [text]
-
-
-def split_sentences(text):
-    text = re.sub(r"\s+", " ", text).strip()
-    if not text:
-        return []
-    sentences = re.split(r"(?<=[.!?])\s+", text)
-    return [s.strip() for s in sentences if s.strip()]
-
-
-def smart_truncate(text, limit, add_ellipsis=False):
-    text = re.sub(r"\s+", " ", text).strip()
-    if len(text) <= limit:
-        return text
-
-    words = text.split()
-    result_words = []
-    current_length = 0
-
-    for word in words:
-        extra = len(word) if not result_words else len(word) + 1
-        reserved = 3 if add_ellipsis else 0
-
-        if current_length + extra + reserved <= limit:
-            result_words.append(word)
-            current_length += extra
-        else:
-            break
-
-    if not result_words:
-        fallback = text[: max(0, limit - (3 if add_ellipsis else 0))].rstrip()
-        return fallback + "..." if add_ellipsis and fallback else fallback
-
-    result = " ".join(result_words).strip()
-    if add_ellipsis and len(result) < len(text):
-        return result + "..."
-    return result
-
-
-def title_case_phrase(text):
-    words = text.split()
-    small_words = {
-        "and", "or", "but", "for", "nor", "a", "an", "the", "as", "at", "by",
-        "from", "in", "into", "of", "on", "onto", "to", "with"
-    }
+def sentence_candidates_from_text(text):
+    text = text.replace("\n", " ")
+    sentences = re.split(r'(?<=[.!?])\s+', text)
     out = []
-    for i, word in enumerate(words):
-        lower = word.lower()
-        if i != 0 and i != len(words) - 1 and lower in small_words:
-            out.append(lower)
-        else:
-            out.append(lower.capitalize())
-    return " ".join(out)
-
-
-def extract_keywords(text, limit=8):
-    words = re.findall(r"[A-Za-z0-9']+", text.lower())
-    freq = {}
-
-    for word in words:
-        if len(word) < 3 or word in STOP_WORDS:
+    for s in sentences:
+        s = clean_heading_candidate(s)
+        if not s:
             continue
-        freq[word] = freq.get(word, 0) + 1
+        wc = len(s.split())
+        if 4 <= wc <= 12:
+            out.append(s)
+    return out
 
-    ranked = sorted(freq.items(), key=lambda x: (-x[1], x[0]))
-    return [word for word, _ in ranked[:limit]]
+
+def phrase_candidates_from_text(text):
+    words = [w for w in clean_heading_candidate(text).split() if w]
+    candidates = []
+    for length in (5, 6, 7, 8):
+        if len(words) >= length:
+            candidates.append(" ".join(words[:length]))
+    return candidates
 
 
-def find_best_sentence(sentences, keywords):
-    if not sentences:
-        return ""
+def choose_heading_from_text(text, seen):
+    candidates = sentence_candidates_from_text(text)
+    if not candidates:
+        candidates = phrase_candidates_from_text(text)
 
-    best_sentence = sentences[0]
-    best_score = -1
+    weak_starts = {
+        "the", "a", "an", "this", "that", "these", "those", "here", "there",
+        "it", "he", "she", "they", "we"
+    }
 
-    for sentence in sentences:
-        lower = sentence.lower()
+    ranked = []
+    for cand in candidates:
+        cleaned = clean_heading_candidate(cand)
+        if not cleaned:
+            continue
+        key = cleaned.lower()
+        words = cleaned.split()
+        if len(words) < 4:
+            continue
+
         score = 0
-
-        for kw in keywords:
-            if kw in lower:
-                score += 3
-
-        length = len(sentence)
-        if 70 <= length <= 170:
-            score += 3
-        elif 40 <= length <= 220:
+        if 5 <= len(words) <= 10:
+            score += 4
+        elif len(words) <= 12:
+            score += 2
+        if not cleaned.endswith((":", ",", "-")):
             score += 1
-
-        if "," in sentence:
+        if any(w[:1].isupper() for w in words if w):
             score += 1
+        if words[0].lower() not in weak_starts:
+            score += 2
+        if re.search(r"\b(said|says|according|because|after|before|during|would|could|should)\b", key):
+            score += 1
+        if re.search(r"\b(and|but|or)\b", key) and len(words) < 6:
+            score -= 1
 
-        if score > best_score:
-            best_score = score
-            best_sentence = sentence
+        ranked.append((score, cleaned, key))
 
-    return best_sentence
+    ranked.sort(key=lambda x: (-x[0], abs(len(x[1]) - 52), len(x[1])))
 
+    for _, cand, key in ranked:
+        if key in seen:
+            continue
+        too_similar = False
+        for prev in seen:
+            if SequenceMatcher(None, key, prev).ratio() >= 0.72:
+                too_similar = True
+                break
+        if too_similar:
+            continue
+        seen.add(key)
+        return cand
 
-def extract_title(paragraphs):
-    if not paragraphs:
-        return "SEO Article"
-
-    first = re.sub(r"\s+", " ", paragraphs[0]).strip()
-    sentences = split_sentences(first)
-    candidate = sentences[0] if sentences else first
-    candidate = re.sub(r"^[\"'“”‘’\-–—:;\s]+", "", candidate).strip()
-    candidate = smart_truncate(candidate, 72, add_ellipsis=False)
-    return candidate if candidate else "SEO Article"
-
-
-def create_focus_keyphrase(title, article):
-    keywords = extract_keywords(title + " " + article, limit=5)
-    if keywords:
-        return title_case_phrase(" ".join(keywords[:3]))
-    return title_case_phrase(smart_truncate(title, 50, add_ellipsis=False))
+    return ""
 
 
-def create_slug(title, focus_keyphrase=""):
-    base = focus_keyphrase if focus_keyphrase else title
-    slug = base.lower()
-    slug = re.sub(r"[^a-z0-9\s-]", "", slug)
+def build_nested_article_structure(sections):
+    structure = []
+    seen = set()
+    cleaned_sections = [s.strip() for s in sections if s.strip()]
+    if not cleaned_sections:
+        return structure
+
+    for idx, section in enumerate(cleaned_sections[:3], start=1):
+        parts = [part.strip() for part in section.split("\n\n") if part.strip()]
+        if not parts:
+            continue
+
+        search_pool = parts[:2] + [section]
+        h2 = ""
+        for candidate_source in search_pool:
+            h2 = choose_heading_from_text(candidate_source, seen)
+            if h2:
+                break
+
+        if not h2:
+            fallback_words = clean_heading_candidate(parts[0]).split()
+            h2 = " ".join(fallback_words[:8]).strip() or f"Section {idx}"
+
+        subsections = []
+        if len(parts) >= 3:
+            lead_body = parts[0]
+            mid_body = "\n\n".join(parts[1:-1]).strip() if len(parts) > 3 else parts[1]
+            end_body = parts[-1]
+            subsections.append({"h3": "", "h4": "", "body": lead_body})
+            if mid_body and mid_body != lead_body and mid_body != end_body:
+                subsections.append({"h3": "", "h4": "", "body": mid_body})
+            if end_body and end_body != lead_body:
+                subsections.append({"h3": "", "h4": "", "body": end_body})
+        else:
+            subsections.append({"h3": "", "h4": "", "body": "\n\n".join(parts).strip()})
+
+        structure.append({"h2": h2, "subsections": subsections})
+
+    return structure[:3]
+
+
+def make_slug(title):
+    slug = re.sub(r"[^a-z0-9\s-]", "", title.lower())
     slug = re.sub(r"\s+", "-", slug).strip("-")
     slug = re.sub(r"-{2,}", "-", slug)
-    return slug[:80]
+    return slug
 
 
-def create_intro(text):
-    sentences = split_sentences(text)
-    if not sentences:
-        return smart_truncate(text, 260, add_ellipsis=True)
-
-    intro = " ".join(sentences[:2])
-    return smart_truncate(intro, 260, add_ellipsis=True)
+def make_focus_keyphrase(title):
+    cleaned = re.sub(r"[^\w\s-]", "", title).strip()
+    words = cleaned.split()
+    return " ".join(words[:10]).strip()
 
 
-def create_seo_title_options(title, focus_keyphrase):
-    title = re.sub(r"\s+", " ", title).strip()
-    focus_keyphrase = re.sub(r"\s+", " ", focus_keyphrase).strip()
-
-    candidates = [
-        title,
-        f"{title} | Key Details",
-        f"{title} | Full Breakdown",
-        f"{focus_keyphrase}: {title}",
-        f"{title} - Latest Update",
-        f"{focus_keyphrase} - Key Details",
-        f"{title} | What Happened",
+def make_seo_title_options(title):
+    base = re.sub(r"\s+", " ", title).strip()
+    if not base:
+        return []
+    opts = [
+        trim_at_word_boundary(base, 70),
+        trim_at_word_boundary(base + " | Full Report", 70),
+        trim_at_word_boundary(base + " | Key Updates", 70),
+        trim_at_word_boundary(base + " | News Analysis", 70),
     ]
-
-    results = []
+    out = []
     seen = set()
-
-    for candidate in candidates:
-        clean = smart_truncate(candidate, 60, add_ellipsis=False)
-        if clean.lower() not in seen:
-            seen.add(clean.lower())
-            results.append(clean)
-
-    return results[:3]
-
-
-def create_meta_description_options(text, focus_keyphrase):
-    cleaned = re.sub(r"\s+", " ", text).strip()
-    sentences = split_sentences(cleaned)
-    keywords = extract_keywords(cleaned, limit=6)
-
-    best = find_best_sentence(sentences, keywords) or cleaned
-    alt_1 = smart_truncate(best, 160, add_ellipsis=True)
-
-    if focus_keyphrase and focus_keyphrase.lower() not in alt_1.lower():
-        combo = f"{focus_keyphrase}: {best}"
-        alt_2 = smart_truncate(combo, 160, add_ellipsis=True)
-    else:
-        alt_2 = alt_1
-
-    first_two = " ".join(sentences[:2]) if sentences else cleaned
-    alt_3 = smart_truncate(first_two, 160, add_ellipsis=True)
-
-    options = []
-    seen = set()
-    for item in [alt_1, alt_2, alt_3]:
-        key = item.lower()
-        if key not in seen:
+    for x in opts:
+        key = x.lower()
+        if x and key not in seen:
+            out.append(x)
             seen.add(key)
-            options.append(item)
-
-    while len(options) < 3:
-        options.append(options[-1] if options else "")
-
-    return options[:3]
+    return out[:4]
 
 
-def create_h2_sections(paragraphs, focus_keyphrase):
-    candidates = []
-    keywords = extract_keywords(" ".join(paragraphs), limit=8)
-
-    for p in paragraphs[1:8]:
-        sentence_list = split_sentences(p)
-        candidate = sentence_list[0] if sentence_list else p
-        candidate = re.sub(r"\s+", " ", candidate).strip()
-        candidate = smart_truncate(candidate, 58, add_ellipsis=False)
-
-        if not candidate:
-            continue
-
-        score = 0
-        lower = candidate.lower()
-
-        for kw in keywords:
-            if kw in lower:
-                score += 2
-
-        if focus_keyphrase.lower() in lower:
-            score += 2
-
-        if 20 <= len(candidate) <= 58:
-            score += 2
-
-        candidates.append((score, title_case_phrase(candidate)))
-
-    candidates = sorted(candidates, key=lambda x: -x[0])
-    unique = []
+def make_meta_options(intro, title):
+    source = re.sub(r"\s+", " ", intro if intro else title).strip()
+    if not source:
+        return []
+    opts = [
+        trim_at_word_boundary(source, 160),
+        trim_at_word_boundary(title + " — " + source, 160),
+        trim_at_word_boundary("Read the latest details: " + source, 160),
+    ]
+    out = []
     seen = set()
-
-    for _, cand in candidates:
-        key = cand.lower()
-        if key not in seen:
+    for x in opts:
+        key = x.lower()
+        if x and key not in seen:
+            out.append(x)
             seen.add(key)
-            unique.append(cand)
-        if len(unique) == 4:
-            break
-
-    if not unique:
-        unique = [
-            f"{focus_keyphrase} Overview",
-            "Key Details and Background",
-            "Main Developments",
-            "What Happens Next"
-        ]
-
-    return [f"H2 {i + 1}: {h2}" for i, h2 in enumerate(unique)]
-
-
-def format_body(paragraphs):
-    formatted = []
-    for p in paragraphs:
-        words = p.split()
-        lines = []
-        for i in range(0, len(words), 18):
-            lines.append(" ".join(words[i:i + 18]))
-        formatted.append("\n".join(lines))
-    return "\n\n".join(formatted)
-
-
-def bullet_points_summary(paragraphs):
-    bullets = []
-    for p in paragraphs[:4]:
-        sentence_list = split_sentences(p)
-        cleaned = sentence_list[0] if sentence_list else p
-        cleaned = re.sub(r"\s+", " ", cleaned).strip()
-        if cleaned:
-            bullets.append(f"- {smart_truncate(cleaned, 140, add_ellipsis=True)}")
-
-    if not bullets:
-        bullets.append("- No summary available.")
-
-    return "\n".join(bullets)
-
-
-def generate_video_script(title, intro, body):
-    body_summary = smart_truncate(re.sub(r"\s+", " ", body), 200, add_ellipsis=True)
-    return (
-        f"Here’s the latest on {title}. "
-        f"{smart_truncate(intro, 110, add_ellipsis=True)} "
-        f"{body_summary} "
-        f"Follow for more updates."
-    )
-
-
-def generate_caption(title):
-    return f"{title} — quick breakdown, key details, and short video summary."
-
-
-def generate_hashtags(title):
-    words = re.findall(r"[A-Za-z0-9]+", title)
-    tags = ["#SEO", "#News", "#Content", "#Trending", "#Update"]
-
-    for word in words[:5]:
-        if len(word) > 2:
-            tags.append(f"#{word}")
-
-    return " ".join(tags[:10])
-
-
-def get_counters(meta_description, seo_title):
-    return {
-        "meta_length": len(meta_description),
-        "seo_title_length": len(seo_title)
-    }
-
-
-def get_seo_score(seo_title, meta_description, focus_keyphrase):
-    score = 0
-    notes = []
-
-    if 45 <= len(seo_title) <= 60:
-        score += 35
-        notes.append("SEO title length is strong.")
-    else:
-        notes.append("SEO title length should be closer to 45-60 characters.")
-
-    if 120 <= len(meta_description) <= 160:
-        score += 35
-        notes.append("Meta description length is strong.")
-    else:
-        notes.append("Meta description should be closer to 120-160 characters.")
-
-    if focus_keyphrase and focus_keyphrase.lower() in seo_title.lower():
-        score += 15
-        notes.append("Focus keyphrase appears in SEO title.")
-    else:
-        notes.append("Add the focus keyphrase to SEO title.")
-
-    if focus_keyphrase and focus_keyphrase.lower() in meta_description.lower():
-        score += 15
-        notes.append("Focus keyphrase appears in meta description.")
-    else:
-        notes.append("Add the focus keyphrase to meta description.")
-
-    return {"score": score, "notes": notes}
-
-
-def format_seo_article(article):
-    article = clean_text(article)
-    paragraphs = split_paragraphs(article)
-
-    title = extract_title(paragraphs)
-    focus_keyphrase = create_focus_keyphrase(title, article)
-    seo_title_options = create_seo_title_options(title, focus_keyphrase)
-    meta_description_options = create_meta_description_options(article, focus_keyphrase)
-
-    seo_title = seo_title_options[0]
-    meta_description = meta_description_options[0]
-
-    intro = create_intro(article)
-    h2_list = create_h2_sections(paragraphs, focus_keyphrase)
-    body = format_body(paragraphs)
-    slug = create_slug(title, focus_keyphrase)
-    image_alt = f"Main image related to {title}"
-    image_title = title
-    short_summary = bullet_points_summary(paragraphs)
-    internal_link = "Read more about [Topic]..."
-    conclusion = (
-        "This article ends with the final reported developments and raises discussion "
-        "about what may happen next.\nWhat do you think about this situation?"
-    )
-    video_script = generate_video_script(title, intro, body)
-    caption = generate_caption(title)
-    hashtags = generate_hashtags(title)
-    counters = get_counters(meta_description, seo_title)
-    seo_score = get_seo_score(seo_title, meta_description, focus_keyphrase)
-
-    return {
-        "H1 Tag": f"{title} 2026",
-        "Introduction": intro,
-        "H2 Tags": "\n".join(h2_list),
-        "Main Content Body": body,
-        "Internal Link Placeholder": internal_link,
-        "Conclusion & CTA": conclusion,
-        "Focus Keyphrase": focus_keyphrase,
-        "SEO Title": seo_title,
-        "SEO Title Options": seo_title_options,
-        "Meta Description": meta_description,
-        "Meta Description Options": meta_description_options,
-        "Image Alt Text": image_alt,
-        "Image Title": image_title,
-        "Slug (URL)": slug,
-        "Short Summary (20-second video)": short_summary,
-        "Video Script": video_script,
-        "Caption": caption,
-        "Hashtags": hashtags,
-        "Counters": counters,
-        "SEO Score": seo_score
-    }
-
-
-def build_export_text(data):
-    seo_score = data.get("SEO Score", {})
-    notes = "\n".join(f"- {note}" for note in seo_score.get("notes", []))
-    seo_title_options = "\n".join(f"- {item}" for item in data.get("SEO Title Options", []))
-    meta_options = "\n".join(f"- {item}" for item in data.get("Meta Description Options", []))
-
-    return f"""
-==================== H1 TAG ====================
-{data.get("H1 Tag", "")}
-
-==================== INTRODUCTION ====================
-{data.get("Introduction", "")}
-
-==================== H2 TAGS ====================
-{data.get("H2 Tags", "")}
-
-==================== MAIN CONTENT BODY ====================
-{data.get("Main Content Body", "")}
-
-==================== INTERNAL LINK PLACEHOLDER ====================
-{data.get("Internal Link Placeholder", "")}
-
-==================== CONCLUSION & CTA ====================
-{data.get("Conclusion & CTA", "")}
-
-==================== SEO TECHNICAL DETAILS ====================
-
-Focus Keyphrase:
-{data.get("Focus Keyphrase", "")}
-
-SEO Title:
-{data.get("SEO Title", "")}
-
-SEO Title Options:
-{seo_title_options}
-
-Meta Description:
-{data.get("Meta Description", "")}
-
-Meta Description Options:
-{meta_options}
-
-Image Alt Text:
-{data.get("Image Alt Text", "")}
-
-Image Title:
-{data.get("Image Title", "")}
-
-Slug (URL):
-{data.get("Slug (URL)", "")}
-
-Short Summary (20-second video):
-{data.get("Short Summary (20-second video)", "")}
-
-==================== VIDEO SECTION ====================
-
-Video Script:
-{data.get("Video Script", "")}
-
-Caption:
-{data.get("Caption", "")}
-
-Hashtags:
-{data.get("Hashtags", "")}
-
-==================== SEO SCORE ====================
-
-Score:
-{seo_score.get("score", 0)}
-
-Notes:
-{notes}
-""".strip()
-
-
-def decode_base64_image(data_url: str) -> Image.Image:
-    if "," not in data_url:
-        raise ValueError("Invalid image data.")
-    _, encoded = data_url.split(",", 1)
-    raw = base64.b64decode(encoded)
-    return Image.open(BytesIO(raw))
-
-
-def encode_image_to_base64(image: Image.Image, fmt: str = "PNG") -> str:
-    buffer = BytesIO()
-    fmt_upper = fmt.upper()
-    save_kwargs = {}
-
-    if fmt_upper == "JPEG":
-        save_kwargs["quality"] = 97
-        save_kwargs["optimize"] = True
-        save_kwargs["subsampling"] = 0
-    elif fmt_upper == "WEBP":
-        save_kwargs["quality"] = 98
-        save_kwargs["method"] = 6
-    elif fmt_upper == "PNG":
-        save_kwargs["compress_level"] = 1
-
-    image.save(buffer, format=fmt_upper, **save_kwargs)
-    encoded = base64.b64encode(buffer.getvalue()).decode("utf-8")
-
-    if fmt_upper == "PNG":
-        mime = "image/png"
-    elif fmt_upper == "JPEG":
-        mime = "image/jpeg"
-    else:
-        mime = "image/webp"
-
-    return f"data:{mime};base64,{encoded}"
-
-
-def upscale_smooth_image(image: Image.Image, scale: int, clean_mode: str = "balanced") -> Image.Image:
-    image = ImageOps.exif_transpose(image)
-
-    if image.mode not in ("RGB", "RGBA"):
-        image = image.convert("RGBA") if "A" in image.getbands() else image.convert("RGB")
-
-    target_size = (image.width * scale, image.height * scale)
-    current = image
-
-    while current.width < target_size[0] or current.height < target_size[1]:
-        next_w = min(target_size[0], int(current.width * 1.5))
-        next_h = min(target_size[1], int(current.height * 1.5))
-        current = current.resize((next_w, next_h), Image.Resampling.LANCZOS)
-        current = current.filter(ImageFilter.UnsharpMask(radius=1.5, percent=140, threshold=2))
-
-    if current.size != target_size:
-        current = current.resize(target_size, Image.Resampling.LANCZOS)
-
-    if clean_mode == "soft":
-        current = current.filter(ImageFilter.SMOOTH)
-        current = current.filter(ImageFilter.UnsharpMask(radius=1.2, percent=120, threshold=2))
-        current = ImageEnhance.Contrast(current).enhance(1.04)
-        current = ImageEnhance.Sharpness(current).enhance(1.08)
-
-    elif clean_mode == "balanced":
-        current = current.filter(ImageFilter.UnsharpMask(radius=1.8, percent=160, threshold=2))
-        current = ImageEnhance.Contrast(current).enhance(1.08)
-        current = ImageEnhance.Sharpness(current).enhance(1.18)
-
-    elif clean_mode == "cleanest":
-        current = current.filter(ImageFilter.MedianFilter(size=3))
-        current = current.filter(ImageFilter.UnsharpMask(radius=2.0, percent=190, threshold=2))
-        current = ImageEnhance.Contrast(current).enhance(1.12)
-        current = ImageEnhance.Sharpness(current).enhance(1.25)
-        current = ImageEnhance.Color(current).enhance(1.03)
-
-    return current
-
-
+    return out[:3]
+
+
+def build_plain_text(h1, intro, structure):
+    parts = []
+    if h1:
+        parts += [h1, ""]
+    if intro:
+        parts += [intro, ""]
+    for sec in structure:
+        parts += [sec["h2"], ""]
+        for sub in sec["subsections"]:
+            if sub["h3"]:
+                parts.append(sub["h3"])
+            if sub["h4"]:
+                parts.append(sub["h4"])
+            parts += [sub["body"], ""]
+    return "\n".join(parts).strip()
+
+
+def esc(text):
+    return html.escape(text or "", quote=True)
+
+
+def build_wp_html(h1, intro, structure, image_data_uri="", alt_text="", img_title="", caption=""):
+    parts = []
+
+    if image_data_uri:
+        img_html = (
+            f'<figure class="wp-block-image size-full featured-image-wrap">'
+            f'<img src="{image_data_uri}" alt="{esc(alt_text or h1 or "Featured image")}" '
+            f'title="{esc(img_title or h1 or "Featured image")}" />'
+        )
+        if caption:
+            img_html += f"<figcaption>{esc(caption)}</figcaption>"
+        img_html += "</figure>"
+        parts.append(img_html)
+
+    if h1:
+        parts.append(f"<h1>{esc(h1)}</h1>")
+    if intro:
+        parts.append(f"<p>{esc(intro)}</p>")
+
+    for sec in structure:
+        if sec.get("h2"):
+            parts.append(f"<h2>{esc(sec['h2'])}</h2>")
+        for sub in sec.get("subsections", []):
+            if sub.get("h3"):
+                parts.append(f"<h3>{esc(sub['h3'])}</h3>")
+            if sub.get("h4"):
+                parts.append(f"<h4>{esc(sub['h4'])}</h4>")
+            for p in [x.strip() for x in sub.get("body", "").split("\n\n") if x.strip()]:
+                parts.append(f"<p>{esc(p).replace(chr(10), '<br>')}</p>")
+
+    return "\n".join(parts).strip()
+
+
+# =========================
+# IMAGE SEO HELPERS
+# =========================
+def sentence_case(text):
+    text = re.sub(r"\s+", " ", (text or "")).strip()
+    if not text:
+        return ""
+    return text[0].upper() + text[1:]
+
+
+def trim_words(text, max_words):
+    words = (text or "").split()
+    if len(words) <= max_words:
+        return " ".join(words)
+    return " ".join(words[:max_words])
+
+
+def trim_chars(text, max_chars):
+    return trim_at_word_boundary(text, max_chars)
+
+
+def normalize_phrase(text, title_case=False):
+    text = re.sub(r"[_\-]+", " ", (text or ""))
+    text = re.sub(r"\s+", " ", text).strip()
+    return text.title() if title_case else sentence_case(text)
+
+
+def infer_subject_from_article(h1, focus_keyphrase):
+    title = h1 or focus_keyphrase or "News image"
+    return trim_words(normalize_phrase(title, title_case=False), 8)
+
+
+def infer_action_from_article(h1, intro):
+    combined = f"{h1} {intro}".lower()
+    actions = [
+        "breaking news", "press event", "announcement", "meeting",
+        "report", "launch", "discussion", "conference", "interview"
+    ]
+    for action in actions:
+        if action in combined:
+            return action
+    return "news update"
+
+
+def infer_context_from_article(intro, h1, scene_notes=""):
+    context = scene_notes.strip()
+    if context:
+        return trim_words(normalize_phrase(context, title_case=False), 8)
+
+    source = intro or h1 or "news image"
+    source = re.sub(r"[^\w\s-]", " ", source)
+    source = re.sub(r"\s+", " ", source).strip()
+    return trim_words(source, 8).lower()
+
+
+def build_image_alt_text(subject, action, context):
+    parts = [subject]
+    if action and action.lower() not in subject.lower():
+        parts.append(action)
+    if context and context.lower() not in " ".join(parts).lower():
+        parts.append(context)
+    alt_text = sentence_case(" ".join([p for p in parts if p]))
+    alt_text = trim_words(alt_text, 16)
+    return trim_chars(alt_text, 125)
+
+
+def build_image_title(subject, context):
+    title = subject or context or "Featured image"
+    if context and context.lower() not in title.lower() and len(title.split()) < 4:
+        title = f"{title} {context}"
+    title = normalize_phrase(title, title_case=True)
+    title = trim_words(title, 8)
+    return trim_chars(title, 70)
+
+
+def build_image_caption(subject, action, context):
+    parts = [subject]
+    if action and action.lower() not in subject.lower():
+        parts.append(action)
+    elif context and context.lower() not in subject.lower():
+        parts.append(context)
+    if context and context.lower() not in " ".join(parts).lower():
+        parts.append(context)
+
+    caption = sentence_case(" ".join([p for p in parts if p]))
+    caption = trim_words(caption, 24)
+    caption = trim_chars(caption, 160)
+    if caption and not caption.endswith("."):
+        caption += "."
+    return caption
+
+
+# =========================
+# IMAGE HELPERS
+# =========================
+def image_to_data_uri(image: Image.Image, quality=92):
+    buf = io.BytesIO()
+    image.convert("RGB").save(buf, format="JPEG", quality=quality, optimize=True)
+    encoded = base64.b64encode(buf.getvalue()).decode("utf-8")
+    return f"data:image/jpeg;base64,{encoded}"
+
+
+def export_image_under_target_bytes(image: Image.Image, target_kb=100):
+    target_bytes = int(target_kb * 1024)
+    candidate = image.copy().convert("RGB")
+
+    scales = [1.0, 0.96, 0.92, 0.88, 0.84, 0.80, 0.76, 0.72, 0.68, 0.64]
+    qualities = [95, 92, 89, 86, 83, 80, 77, 74, 71, 68, 65, 62, 58, 54, 50, 46, 42, 38]
+
+    best_bytes = b""
+
+    for scale in scales:
+        trial = candidate
+        if scale < 1.0:
+            new_w = max(1, int(candidate.width * scale))
+            new_h = max(1, int(candidate.height * scale))
+            trial = candidate.resize((new_w, new_h), Image.LANCZOS)
+
+        for quality in qualities:
+            buf = io.BytesIO()
+            trial.save(
+                buf,
+                format="JPEG",
+                quality=quality,
+                optimize=True,
+                progressive=True
+            )
+            data = buf.getvalue()
+            best_bytes = data
+            if len(data) <= target_bytes:
+                return data
+
+    return best_bytes
+
+
+# =========================
+# ROUTES
+# =========================
 @app.route("/")
 def index():
     return render_template("index.html")
 
 
-@app.route("/format", methods=["POST"])
-def format_article():
+@app.route("/api/process", methods=["POST"])
+def api_process():
+    data = request.get_json(force=True)
+    raw = (data.get("article") or "").strip()
+
+    if not raw:
+        return jsonify({"ok": False, "error": "Please paste an article first."}), 400
+
+    lines = clean_lines(raw)
+    lines = strip_internal_seo_lines(lines)
+
+    if not lines:
+        return jsonify({"ok": False, "error": "No valid content found."}), 400
+
+    h1 = guess_title(lines)
+    intro = build_intro(lines)
+    sections = split_body_into_sections(lines, num_sections=3)
+    structure = build_nested_article_structure(sections)
+
+    focus_keyphrase = make_focus_keyphrase(h1)
+    slug = make_slug(h1)
+    short_summary = trim_at_word_boundary(re.sub(r"\s+", " ", intro if intro else h1).strip(), 200)
+    seo_titles = make_seo_title_options(h1)
+    meta_options = make_meta_options(intro, h1)
+    seo_title = seo_titles[0] if seo_titles else h1
+    meta_description = meta_options[0] if meta_options else trim_at_word_boundary(intro if intro else h1, 160)
+    plain_text = build_plain_text(h1, intro, structure)
+    wp_html = build_wp_html(h1, intro, structure)
+
+    headings_summary = []
+    body_blocks = []
+    for sec in structure[:3]:
+        if sec["h2"]:
+            headings_summary.append(sec["h2"])
+            body_blocks.append(sec["h2"])
+        sub_bodies = []
+        for sub in sec["subsections"]:
+            if sub["h3"]:
+                headings_summary.append("  - " + sub["h3"])
+            if sub["h4"]:
+                headings_summary.append("    * " + sub["h4"])
+            if sub["body"].strip():
+                sub_bodies.append(sub["body"].strip())
+        if sub_bodies:
+            body_blocks.append("\n\n".join(sub_bodies))
+
+    return jsonify({
+        "ok": True,
+        "h1": h1,
+        "intro": intro,
+        "structure": structure,
+        "focus_keyphrase": focus_keyphrase,
+        "seo_title": seo_title,
+        "meta_description": meta_description,
+        "slug": slug,
+        "short_summary": short_summary,
+        "seo_title_options": seo_titles,
+        "meta_options": meta_options,
+        "plain_text": plain_text,
+        "headings_summary": "\n".join(headings_summary),
+        "body_copy": "\n\n".join(body_blocks),
+        "wp_html": wp_html
+    })
+
+
+@app.route("/api/image-seo", methods=["POST"])
+def api_image_seo():
+    data = request.get_json(force=True)
+    h1 = data.get("h1", "")
+    intro = data.get("intro", "")
+    focus_keyphrase = data.get("focus_keyphrase", "")
+    scene_notes = data.get("scene_notes", "")
+
+    subject = infer_subject_from_article(h1, focus_keyphrase)
+    action = infer_action_from_article(h1, intro)
+    context = infer_context_from_article(intro, h1, scene_notes)
+
+    alt_text = build_image_alt_text(subject, action, context)
+    img_title = build_image_title(subject, context)
+    caption = build_image_caption(subject, action, context)
+
+    return jsonify({
+        "ok": True,
+        "alt_text": alt_text,
+        "img_title": img_title,
+        "caption": caption
+    })
+
+
+@app.route("/api/crop-image", methods=["POST"])
+def api_crop_image():
+    if "image" not in request.files:
+        return jsonify({"ok": False, "error": "No image uploaded."}), 400
+
+    file = request.files["image"]
+    if not file.filename:
+        return jsonify({"ok": False, "error": "No image selected."}), 400
+
     try:
-        data = request.get_json(silent=True) or {}
-        article = (data.get("article") or "").strip()
+        x = int(float(request.form.get("x", 0)))
+        y = int(float(request.form.get("y", 0)))
+        width = int(float(request.form.get("width", 0)))
+        height = int(float(request.form.get("height", 0)))
+        target_w = int(request.form.get("target_width", 0) or 0)
+        target_h = int(request.form.get("target_height", 0) or 0)
+        export_under_100kb = request.form.get("export_under_100kb", "false").lower() == "true"
 
-        if not article:
-            return jsonify({"error": "Please paste article content first."}), 400
+        image = Image.open(file.stream).convert("RGB")
 
-        result = format_seo_article(article)
-        return jsonify(result)
-    except Exception as e:
-        app.logger.exception("Format error")
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        x = max(0, min(x, image.width - 1))
+        y = max(0, min(y, image.height - 1))
+        width = max(1, min(width, image.width - x))
+        height = max(1, min(height, image.height - y))
 
+        cropped = image.crop((x, y, x + width, y + height))
 
-@app.route("/export/txt", methods=["POST"])
-def export_txt():
-    try:
-        data = request.get_json(silent=True) or {}
-        content = build_export_text(data)
-        buffer = BytesIO()
-        buffer.write(content.encode("utf-8"))
-        buffer.seek(0)
+        if target_w > 0 and target_h > 0:
+            cropped = cropped.resize((target_w, target_h), Image.LANCZOS)
 
-        return send_file(
-            buffer,
-            as_attachment=True,
-            download_name="seo_output.txt",
-            mimetype="text/plain"
-        )
-    except Exception as e:
-        app.logger.exception("TXT export error")
-        return jsonify({"error": f"TXT export failed: {str(e)}"}), 500
+        if export_under_100kb:
+            out_bytes = export_image_under_target_bytes(cropped, target_kb=100)
+            data_uri = "data:image/jpeg;base64," + base64.b64encode(out_bytes).decode("utf-8")
+            size_kb = round(len(out_bytes) / 1024, 1)
+            return jsonify({
+                "ok": True,
+                "image_data_uri": data_uri,
+                "width": cropped.width,
+                "height": cropped.height,
+                "size_kb": size_kb
+            })
 
-
-@app.route("/export/docx", methods=["POST"])
-def export_docx():
-    try:
-        if not DOCX_AVAILABLE:
-            return jsonify({"error": "DOCX export is not available. python-docx is missing."}), 500
-
-        data = request.get_json(silent=True) or {}
-        doc = Document()
-        doc.add_heading("SEO Content Formatter Export", level=1)
-
-        sections = [
-            "H1 Tag",
-            "Introduction",
-            "H2 Tags",
-            "Main Content Body",
-            "Internal Link Placeholder",
-            "Conclusion & CTA",
-            "Focus Keyphrase",
-            "SEO Title",
-            "Meta Description",
-            "Image Alt Text",
-            "Image Title",
-            "Slug (URL)",
-            "Short Summary (20-second video)",
-            "Video Script",
-            "Caption",
-            "Hashtags"
-        ]
-
-        for section in sections:
-            doc.add_heading(section, level=2)
-            doc.add_paragraph(str(data.get(section, "")))
-
-        doc.add_heading("SEO Title Options", level=2)
-        for item in data.get("SEO Title Options", []):
-            doc.add_paragraph(item, style="List Bullet")
-
-        doc.add_heading("Meta Description Options", level=2)
-        for item in data.get("Meta Description Options", []):
-            doc.add_paragraph(item, style="List Bullet")
-
-        score = data.get("SEO Score", {})
-        doc.add_heading("SEO Score", level=2)
-        doc.add_paragraph(f"Score: {score.get('score', 0)}")
-
-        for note in score.get("notes", []):
-            doc.add_paragraph(note, style="List Bullet")
-
-        buffer = BytesIO()
-        doc.save(buffer)
-        buffer.seek(0)
-
-        return send_file(
-            buffer,
-            as_attachment=True,
-            download_name="seo_output.docx",
-            mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        )
-    except Exception as e:
-        app.logger.exception("DOCX export error")
-        return jsonify({"error": f"DOCX export failed: {str(e)}"}), 500
-
-
-@app.route("/image/upscale-smooth", methods=["POST"])
-def image_upscale_smooth():
-    try:
-        data = request.get_json(silent=True) or {}
-        image_data = data.get("image")
-        scale = int(data.get("scale", 2))
-        clean_mode = (data.get("clean_mode") or "balanced").strip().lower()
-        output_format = (data.get("output_format") or "png").strip().lower()
-
-        if not image_data:
-            return jsonify({"error": "No image provided."}), 400
-
-        if scale not in (2, 3, 4):
-            return jsonify({"error": "Scale must be 2, 3, or 4."}), 400
-
-        if clean_mode not in ("soft", "balanced", "cleanest"):
-            clean_mode = "balanced"
-
-        if output_format not in SUPPORTED_IMAGE_FORMATS:
-            output_format = "png"
-
-        image = decode_base64_image(image_data)
-        result = upscale_smooth_image(image, scale=scale, clean_mode=clean_mode)
-
-        if output_format in ("jpg", "jpeg"):
-            if result.mode in ("RGBA", "LA"):
-                bg = Image.new("RGB", result.size, (255, 255, 255))
-                bg.paste(result, mask=result.getchannel("A"))
-                result = bg
-            elif result.mode != "RGB":
-                result = result.convert("RGB")
-            fmt = "JPEG"
-        elif output_format == "webp":
-            fmt = "WEBP"
-        else:
-            fmt = "PNG"
-
-        result_data = encode_image_to_base64(result, fmt=fmt)
-
+        data_uri = image_to_data_uri(cropped, quality=92)
         return jsonify({
-            "image": result_data,
-            "width": result.width,
-            "height": result.height,
-            "scale": scale,
-            "clean_mode": clean_mode,
-            "output_format": output_format
+            "ok": True,
+            "image_data_uri": data_uri,
+            "width": cropped.width,
+            "height": cropped.height
         })
-    except Exception as e:
-        app.logger.exception("Upscale smooth error")
-        return jsonify({"error": f"Upscale failed: {str(e)}"}), 500
+
+    except Exception as exc:
+        return jsonify({"ok": False, "error": f"Image processing failed: {exc}"}), 400
+
+
+@app.route("/api/export-txt", methods=["POST"])
+def api_export_txt():
+    data = request.get_json(force=True)
+    text = data.get("text", "")
+    return send_file(
+        io.BytesIO(text.encode("utf-8")),
+        mimetype="text/plain",
+        as_attachment=True,
+        download_name="seo-output.txt"
+    )
+
+
+@app.route("/api/export-html", methods=["POST"])
+def api_export_html():
+    data = request.get_json(force=True)
+
+    html_doc = f"""<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{esc(data.get("h1") or "SEO Output")}</title>
+<style>
+:root {{
+    --bg: #f4f7fb;
+    --card: #ffffff;
+    --text: #1f2937;
+    --muted: #4b5563;
+    --border: #dbe4f0;
+    --accent: #1d4ed8;
+}}
+* {{ box-sizing: border-box; }}
+body {{
+    margin: 0;
+    font-family: "Segoe UI", Arial, Helvetica, sans-serif;
+    color: var(--text);
+    background: linear-gradient(180deg, #eef4ff 0%, #f8fbff 100%);
+    line-height: 1.8;
+    font-size: 18px;
+    padding: 28px 18px 48px;
+}}
+.article-shell {{
+    max-width: 940px;
+    margin: 0 auto;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 22px;
+    box-shadow: 0 18px 50px rgba(15, 23, 42, 0.08);
+    padding: 28px 28px 34px;
+}}
+.featured-image {{
+    display: block;
+    width: 100%;
+    border-radius: 18px;
+    margin-bottom: 20px;
+}}
+h1 {{ font-size: 44px; line-height: 1.15; margin: 0 0 18px 0; }}
+h2 {{ font-size: 31px; margin: 28px 0 14px 0; }}
+h3 {{ font-size: 23px; margin: 20px 0 10px 0; }}
+p {{ font-size: 18px; margin: 0 0 16px 0; }}
+</style>
+</head>
+<body>
+<div class="article-shell">
+{data.get("wp_html", "")}
+</div>
+</body>
+</html>"""
+
+    return send_file(
+        io.BytesIO(html_doc.encode("utf-8")),
+        mimetype="text/html",
+        as_attachment=True,
+        download_name="seo-output.html"
+    )
 
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port, debug=True)
