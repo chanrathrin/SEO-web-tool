@@ -3,285 +3,162 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>SEO Content Formatter V5 SMART + Image Editor PRO</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+  <title>SEO News Formatter + Thumbnail Crop Tool</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
-  <div class="app-shell">
-    <header class="topbar">
+  <div class="page-shell">
+    <header class="topbar card">
       <div>
-        <h1>SEO Content Formatter V5 SMART</h1>
-        <p>Smarter SEO logic • Better titles • Better meta • Clean image editor</p>
+        <h1>SEO News Formatter + Thumbnail Crop Tool</h1>
+        <p>Flask web version for WordPress + Yoast workflow</p>
       </div>
-      <button id="themeToggle" class="btn btn-primary">Toggle Theme</button>
     </header>
 
-    <main class="main-grid">
-      <section class="card">
-        <div class="card-head">
-          <div>
-            <h2>Input Article</h2>
-            <p>Paste your article here</p>
-          </div>
+    <section class="grid two-col">
+      <div class="card">
+        <div class="section-head">
+          <h2>Input Article</h2>
+          <p>Paste your article here</p>
         </div>
 
-        <textarea id="articleInput" class="editor" placeholder="Paste your article here..."></textarea>
-
-        <div class="button-row">
-          <button id="formatBtn" class="btn btn-primary">Format SEO</button>
-          <button id="clearInputBtn" class="btn btn-secondary">Clear Input</button>
-        </div>
-      </section>
-
-      <section class="card">
-        <div class="card-head">
-          <div>
-            <h2>SEO Output</h2>
-            <p>Formatted result with smarter SEO sections</p>
-          </div>
+        <div class="toolbar">
+          <button class="btn btn-warning" id="generateBtn">Generate News Format</button>
+          <button class="btn btn-danger" id="clearInputBtn">Clear Input</button>
+          <button class="btn btn-purple" id="exportHtmlBtn">Export HTML</button>
+          <button class="btn btn-primary" id="exportTxtBtn">Export TXT</button>
         </div>
 
-        <div id="outputContainer" class="output-area">
-          <div class="empty-state">Formatted SEO output will appear here.</div>
-        </div>
-
-        <div class="button-row">
-          <button id="copyAllBtn" class="btn btn-secondary">Copy All</button>
-          <button id="exportTxtBtn" class="btn btn-secondary">Export TXT</button>
-          <button id="exportDocxBtn" class="btn btn-secondary">Export DOCX</button>
-          <button id="clearOutputBtn" class="btn btn-secondary">Clear Output</button>
-        </div>
-      </section>
-    </main>
-
-    <section class="card option-card">
-      <div class="card-head">
-        <div>
-          <h2>Smart SEO Options</h2>
-          <p>Choose better title and meta options</p>
-        </div>
+        <textarea id="articleInput" placeholder="Paste your article here..."></textarea>
       </div>
 
-      <div class="options-grid">
-        <div class="option-box">
-          <div class="option-title">SEO Title Options</div>
-          <div id="seoTitleOptions" class="option-list"></div>
+      <div class="card">
+        <div class="section-head">
+          <h2>SEO Output</h2>
+          <p>Formatted result + WordPress HTML</p>
         </div>
 
-        <div class="option-box">
-          <div class="option-title">Meta Description Options</div>
-          <div id="metaOptions" class="option-list"></div>
+        <div class="toolbar">
+          <button class="btn btn-success" id="copyWpHtmlBtn">Copy WP HTML</button>
+          <button class="btn btn-pink" id="clearOutputBtn">Clear Output</button>
+        </div>
+
+        <div id="seoPreview" class="preview-box">
+          <p class="muted">Formatted SEO output will appear here.</p>
         </div>
       </div>
     </section>
 
-    <section class="card quick-copy-card">
-      <div class="card-head">
-        <div>
-          <h2>Quick Copy Sections</h2>
-          <p>Copy only the section you need</p>
+    <section class="grid two-col mt-20">
+      <div class="card">
+        <div class="section-head">
+          <h2>SEO Fields</h2>
+          <p>Auto-generated SEO data</p>
+        </div>
+
+        <div class="field-grid">
+          <label>
+            <span>Focus Keyphrase</span>
+            <input type="text" id="focusKeyphrase" readonly>
+          </label>
+
+          <label>
+            <span>SEO Title</span>
+            <input type="text" id="seoTitle">
+          </label>
+
+          <label class="full">
+            <span>Meta Description</span>
+            <textarea id="metaDescription" rows="3"></textarea>
+          </label>
+
+          <label>
+            <span>Slug (URL)</span>
+            <input type="text" id="slug">
+          </label>
+
+          <label>
+            <span>Short Summary</span>
+            <textarea id="shortSummary" rows="3"></textarea>
+          </label>
+        </div>
+
+        <div class="copy-grid">
+          <button class="btn btn-secondary" data-copy-target="focusKeyphrase">Copy Focus Keyphrase</button>
+          <button class="btn btn-secondary" data-copy-target="seoTitle">Copy SEO Title</button>
+          <button class="btn btn-secondary" data-copy-target="metaDescription">Copy Meta Description</button>
+          <button class="btn btn-secondary" data-copy-target="slug">Copy Slug</button>
+          <button class="btn btn-secondary" data-copy-target="shortSummary">Copy Summary</button>
         </div>
       </div>
 
-      <div class="quick-copy-grid">
-        <button class="copy-chip" data-section="H1 Tag">H1 Tag</button>
-        <button class="copy-chip" data-section="Introduction">Introduction</button>
-        <button class="copy-chip" data-section="H2 Tags">H2 Tags</button>
-        <button class="copy-chip" data-section="Main Content Body">Main Content Body</button>
-        <button class="copy-chip" data-section="Focus Keyphrase">Focus Keyphrase</button>
-        <button class="copy-chip" data-section="SEO Title">SEO Title</button>
-        <button class="copy-chip" data-section="Meta Description">Meta Description</button>
-        <button class="copy-chip" data-section="Slug (URL)">Slug (URL)</button>
-        <button class="copy-chip" data-section="Short Summary (20-second video)">Short Summary</button>
-        <button class="copy-chip" data-section="Video Script">Video Script</button>
-        <button class="copy-chip" data-section="Caption">Caption</button>
-        <button class="copy-chip" data-section="Hashtags">Hashtags</button>
-      </div>
-    </section>
-
-    <section class="card stats-card">
-      <div class="card-head">
-        <div>
-          <h2>SEO Counters</h2>
-          <p>Quick quality check</p>
+      <div class="card">
+        <div class="section-head">
+          <h2>Featured Image + Image SEO</h2>
+          <p>Upload, crop, preview, and generate Yoast fields</p>
         </div>
-      </div>
 
-      <div class="stats-grid">
-        <div class="stat-box">
-          <span class="stat-label">SEO Title Length</span>
-          <span id="seoTitleLength" class="stat-value">0</span>
-        </div>
-        <div class="stat-box">
-          <span class="stat-label">Meta Description Length</span>
-          <span id="metaLength" class="stat-value">0</span>
-        </div>
-        <div class="stat-box">
-          <span class="stat-label">SEO Score</span>
-          <span id="seoScore" class="stat-value">0</span>
-        </div>
-      </div>
+        <div class="toolbar wrap">
+          <label class="btn btn-primary file-btn">
+            Open Image
+            <input type="file" id="imageInput" accept="image/*" hidden>
+          </label>
 
-      <div id="seoNotes" class="seo-notes"></div>
-    </section>
-
-    <section class="card image-card">
-      <div class="card-head">
-        <div>
-          <h2>Image Editor PRO</h2>
-          <p>Crop • Text overlay • Watermark • Preset sizes • UpscaleAI Smooth</p>
+          <button class="btn btn-secondary preset-btn" data-width="1200" data-height="366">Preset 1200x366</button>
+          <button class="btn btn-secondary preset-btn" data-width="800" data-height="445">Preset 800x445</button>
+          <button class="btn btn-success" id="applyCropBtn">Apply Crop</button>
+          <button class="btn btn-warning" id="exportUnder100Btn">Export &lt;100KB</button>
+          <button class="btn btn-primary" id="generateImageSeoBtn">Generate Image SEO</button>
         </div>
-      </div>
 
-      <div class="image-editor-grid">
-        <div class="image-preview-box">
-          <input type="file" id="imageUpload" accept="image/*" class="file-input" />
-          <canvas id="imageCanvas" class="image-canvas"></canvas>
-          <div class="image-help">
-            Upload image to start editing. Drag crop box to move. Use corners to resize.
+        <div class="cropper-grid">
+          <div class="cropper-panel">
+            <div class="canvas-wrap">
+              <img id="sourceImage" alt="" />
+              <div id="cropBox"></div>
+            </div>
+          </div>
+
+          <div class="preview-panel">
+            <div class="preview-label">Live Preview</div>
+            <img id="croppedPreview" alt="" />
+            <div id="imageMeta" class="muted small">No crop preview yet</div>
           </div>
         </div>
 
-        <div class="image-controls">
-          <div class="control-group">
-            <div class="control-title">Quick Tools</div>
-            <div class="button-row">
-              <button id="rotateLeftBtn" class="btn btn-secondary">Rotate Left</button>
-              <button id="rotateRightBtn" class="btn btn-secondary">Rotate Right</button>
-              <button id="flipXBtn" class="btn btn-secondary">Flip X</button>
-              <button id="flipYBtn" class="btn btn-secondary">Flip Y</button>
-              <button id="grayscaleBtn" class="btn btn-secondary">Grayscale</button>
-              <button id="resetImageBtn" class="btn btn-secondary">Reset</button>
-            </div>
-          </div>
+        <div class="field-grid mt-16">
+          <label class="full">
+            <span>Scene Notes</span>
+            <input type="text" id="sceneNotes" placeholder="Optional context for image SEO">
+          </label>
 
-          <div class="control-group">
-            <div class="control-title">Brightness</div>
-            <input type="range" id="brightnessRange" min="0" max="200" value="100" />
-          </div>
+          <label>
+            <span>Alt Text</span>
+            <textarea id="altText" rows="3"></textarea>
+          </label>
 
-          <div class="control-group">
-            <div class="control-title">Contrast</div>
-            <input type="range" id="contrastRange" min="0" max="200" value="100" />
-          </div>
+          <label>
+            <span>Img Title</span>
+            <textarea id="imgTitle" rows="3"></textarea>
+          </label>
 
-          <div class="control-group">
-            <div class="control-title">Preset Sizes</div>
-            <div class="button-row">
-              <button id="presetYoutubeBtn" class="btn btn-secondary">YouTube 1280x720</button>
-              <button id="presetFacebookBtn" class="btn btn-secondary">Facebook 1200x630</button>
-              <button id="presetTikTokBtn" class="btn btn-secondary">TikTok 1080x1920</button>
-              <button id="presetSquareBtn" class="btn btn-secondary">Square 1080x1080</button>
-            </div>
-          </div>
-
-          <div class="control-group">
-            <div class="control-title">Crop</div>
-            <div class="button-row">
-              <button id="toggleCropBtn" class="btn btn-secondary">Toggle Crop Mode</button>
-              <button id="applyCropBtn" class="btn btn-secondary">Apply Crop</button>
-            </div>
-          </div>
-
-          <div class="control-group">
-            <div class="control-title">Text Overlay</div>
-            <input type="text" id="overlayTextInput" class="text-input" placeholder="Enter overlay text" />
-            <div class="two-col">
-              <div>
-                <label class="mini-label">Font Size</label>
-                <input type="range" id="overlayFontSizeRange" min="16" max="100" value="42" />
-              </div>
-              <div>
-                <label class="mini-label">Text Color</label>
-                <input type="color" id="overlayColorInput" value="#ffffff" class="color-input" />
-              </div>
-            </div>
-            <div class="two-col">
-              <div>
-                <label class="mini-label">X Position</label>
-                <input type="range" id="overlayXRange" min="0" max="100" value="50" />
-              </div>
-              <div>
-                <label class="mini-label">Y Position</label>
-                <input type="range" id="overlayYRange" min="0" max="100" value="85" />
-              </div>
-            </div>
-            <div class="button-row">
-              <button id="applyTextBtn" class="btn btn-secondary">Apply Text</button>
-              <button id="clearTextBtn" class="btn btn-secondary">Clear Text</button>
-            </div>
-          </div>
-
-          <div class="control-group">
-            <div class="control-title">Watermark</div>
-            <input type="text" id="watermarkInput" class="text-input" placeholder="Enter watermark" />
-            <div class="two-col">
-              <div>
-                <label class="mini-label">Watermark Size</label>
-                <input type="range" id="watermarkSizeRange" min="12" max="60" value="22" />
-              </div>
-              <div>
-                <label class="mini-label">Opacity</label>
-                <input type="range" id="watermarkOpacityRange" min="5" max="100" value="35" />
-              </div>
-            </div>
-            <div class="button-row">
-              <button id="applyWatermarkBtn" class="btn btn-secondary">Apply Watermark</button>
-              <button id="clearWatermarkBtn" class="btn btn-secondary">Clear Watermark</button>
-            </div>
-          </div>
-
-          <div class="control-group">
-            <div class="control-title">UpscaleAI Smooth</div>
-            <div class="two-col">
-              <div>
-                <label class="mini-label">Scale</label>
-                <select id="upscaleScaleSelect" class="text-input">
-                  <option value="2">2x</option>
-                  <option value="3">3x</option>
-                  <option value="4">4x</option>
-                </select>
-              </div>
-              <div>
-                <label class="mini-label">Clean Mode</label>
-                <select id="upscaleCleanModeSelect" class="text-input">
-                  <option value="soft">Soft</option>
-                  <option value="balanced">Balanced</option>
-                  <option value="cleanest" selected>Cleanest</option>
-                </select>
-              </div>
-            </div>
-
-            <div class="two-col">
-              <div>
-                <label class="mini-label">Save As</label>
-                <select id="upscaleFormatSelect" class="text-input">
-                  <option value="png" selected>PNG</option>
-                  <option value="jpg">JPG</option>
-                  <option value="webp">WEBP</option>
-                </select>
-              </div>
-              <div class="upscale-note-box">
-                <div class="mini-label">Recommended</div>
-                <div class="image-help">Use 2x + Cleanest + PNG for best clarity.</div>
-              </div>
-            </div>
-
-            <div class="button-row">
-              <button id="upscaleSmoothBtn" class="btn btn-primary">Run UpscaleAI Smooth</button>
-            </div>
-          </div>
-
-          <div class="control-group">
-            <button id="downloadImageBtn" class="btn btn-primary full-width">Download Edited Image</button>
-          </div>
+          <label class="full">
+            <span>Caption</span>
+            <textarea id="caption" rows="3"></textarea>
+          </label>
         </div>
       </div>
     </section>
 
-    <footer class="statusbar">
-      <span id="statusText">Ready</span>
-    </footer>
+    <section class="card mt-20">
+      <div class="section-head">
+        <h2>WordPress HTML Output</h2>
+        <p>Ready to copy into WordPress</p>
+      </div>
+      <textarea id="wpHtmlOutput" class="code-output" readonly></textarea>
+    </section>
+
+    <div id="toast" class="toast"></div>
   </div>
 
   <script src="{{ url_for('static', filename='script.js') }}"></script>
