@@ -1,437 +1,436 @@
 const state = {
-  processed: null,
-  selectedPreset: { width: 1200, height: 366 },
-  uploadedFile: null,
-  crop: { x: 20, y: 20, width: 240, height: 120 },
+  result: null,
+  originalImage: null,
+  croppedImageData: "",
+  selection: null,
   dragging: false,
-  dragOffsetX: 0,
-  dragOffsetY: 0,
-  latestImageDataUri: ""
+  startX: 0,
+  startY: 0,
+  scaleX: 1,
+  scaleY: 1
 };
 
-const els = {
+const el = {
   articleInput: document.getElementById("articleInput"),
-  seoPreview: document.getElementById("seoPreview"),
+  sceneNotes: document.getElementById("sceneNotes"),
+  generateBtn: document.getElementById("generateBtn"),
+  clearInputBtn: document.getElementById("clearInputBtn"),
+  clearOutputBtn: document.getElementById("clearOutputBtn"),
+  copyWpHtmlBtn: document.getElementById("copyWpHtmlBtn"),
+  exportHtmlBtn: document.getElementById("exportHtmlBtn"),
+  exportDocxBtn: document.getElementById("exportDocxBtn"),
+  exportTxtBtn: document.getElementById("exportTxtBtn"),
+  imageUpload: document.getElementById("imageUpload"),
+  cropCompressBtn: document.getElementById("cropCompressBtn"),
+  resetImageBtn: document.getElementById("resetImageBtn"),
+  imageCanvas: document.getElementById("imageCanvas"),
+  previewImage: document.getElementById("previewImage"),
+  imageMeta: document.getElementById("imageMeta"),
+  statusText: document.getElementById("statusText"),
+  h1Title: document.getElementById("h1Title"),
+  introText: document.getElementById("introText"),
+  headingsText: document.getElementById("headingsText"),
+  bodyText: document.getElementById("bodyText"),
   focusKeyphrase: document.getElementById("focusKeyphrase"),
   seoTitle: document.getElementById("seoTitle"),
   metaDescription: document.getElementById("metaDescription"),
-  slug: document.getElementById("slug"),
+  slugValue: document.getElementById("slugValue"),
   shortSummary: document.getElementById("shortSummary"),
-  wpHtmlOutput: document.getElementById("wpHtmlOutput"),
-
-  generateBtn: document.getElementById("generateBtn"),
-  clearInputBtn: document.getElementById("clearInputBtn"),
-  exportHtmlBtn: document.getElementById("exportHtmlBtn"),
-  exportTxtBtn: document.getElementById("exportTxtBtn"),
-  copyWpHtmlBtn: document.getElementById("copyWpHtmlBtn"),
-  clearOutputBtn: document.getElementById("clearOutputBtn"),
-
-  imageInput: document.getElementById("imageInput"),
-  sourceImage: document.getElementById("sourceImage"),
-  cropBox: document.getElementById("cropBox"),
-  croppedPreview: document.getElementById("croppedPreview"),
-  imageMeta: document.getElementById("imageMeta"),
-  sceneNotes: document.getElementById("sceneNotes"),
   altText: document.getElementById("altText"),
   imgTitle: document.getElementById("imgTitle"),
-  caption: document.getElementById("caption"),
-  applyCropBtn: document.getElementById("applyCropBtn"),
-  exportUnder100Btn: document.getElementById("exportUnder100Btn"),
-  generateImageSeoBtn: document.getElementById("generateImageSeoBtn"),
-
-  toast: document.getElementById("toast")
+  captionText: document.getElementById("captionText"),
+  formattedOutput: document.getElementById("formattedOutput")
 };
 
-function showToast(message) {
-  els.toast.textContent = message;
-  els.toast.classList.add("show");
-  clearTimeout(showToast._timer);
-  showToast._timer = setTimeout(() => {
-    els.toast.classList.remove("show");
-  }, 2200);
+const ctx = el.imageCanvas.getContext("2d");
+
+function setStatus(text) {
+  el.statusText.textContent = text;
 }
 
-function renderPreview(data) {
-  const blocks = [];
-  if (data.h1) blocks.push(`<h1>${escapeHtml(data.h1)}</h1>`);
-  if (data.intro) blocks.push(`<p>${escapeHtml(data.intro)}</p>`);
+function escapeHtml(str) {
+  return (str || "").replace(/[&<>"']/g, (m) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#039;"
+  }[m]));
+}
 
-  (data.structure || []).forEach(sec => {
-    blocks.push(`<h2>${escapeHtml(sec.h2 || "")}</h2>`);
-    (sec.subsections || []).forEach(sub => {
-      if (sub.h3) blocks.push(`<h3>${escapeHtml(sub.h3)}</h3>`);
-      if (sub.h4) blocks.push(`<h4>${escapeHtml(sub.h4)}</h4>`);
-      if (sub.body) blocks.push(`<p>${escapeHtml(sub.body).replace(/\n\n/g, "<br><br>")}</p>`);
+function renderFormattedOutput(result) {
+  if (!result) {
+    el.formattedOutput.innerHTML = "Formatted SEO output will appear here.";
+    return;
+  }
+
+  let html = "";
+  if (result.h1) html += `<h1>${escapeHtml(result.h1)}</h1>`;
+  if (result.intro) html += `<p>${escapeHtml(result.intro)}</p>`;
+
+  (result.structure || []).forEach((sec) => {
+    html += `<h2>${escapeHtml(sec.h2 || "")}</h2>`;
+    (sec.subsections || []).forEach((sub) => {
+      if (sub.h3) html += `<h3>${escapeHtml(sub.h3)}</h3>`;
+      if (sub.h4) html += `<h4>${escapeHtml(sub.h4)}</h4>`;
+      const bodyParts = (sub.body || "").split("\n\n").filter(Boolean);
+      bodyParts.forEach((p) => {
+        html += `<p>${escapeHtml(p)}</p>`;
+      });
     });
   });
 
-  els.seoPreview.innerHTML = blocks.join("");
+  el.formattedOutput.innerHTML = html || "Formatted SEO output will appear here.";
 }
 
-function escapeHtml(text) {
-  const div = document.createElement("div");
-  div.textContent = text || "";
-  return div.innerHTML;
-}
-
-async function generateArticle() {
-  const article = els.articleInput.value.trim();
-  if (!article) {
-    showToast("Please paste an article first");
-    return;
-  }
-
-  const res = await fetch("/api/process", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ article })
-  });
-
-  const data = await res.json();
-  if (!data.ok) {
-    showToast(data.error || "Failed");
-    return;
-  }
-
-  state.processed = data;
-  renderPreview(data);
-
-  els.focusKeyphrase.value = data.focus_keyphrase || "";
-  els.seoTitle.value = data.seo_title || "";
-  els.metaDescription.value = data.meta_description || "";
-  els.slug.value = data.slug || "";
-  els.shortSummary.value = data.short_summary || "";
-  els.wpHtmlOutput.value = data.wp_html || "";
-
-  showToast("SEO output generated");
-}
-
-function clearInput() {
-  els.articleInput.value = "";
+function fillFields(result) {
+  el.h1Title.value = result.h1 || "";
+  el.introText.value = result.intro || "";
+  el.headingsText.value = result.headings_copy || "";
+  el.bodyText.value = result.body_copy || "";
+  el.focusKeyphrase.value = result.focus_keyphrase || "";
+  el.seoTitle.value = result.seo_title || "";
+  el.metaDescription.value = result.meta_description || "";
+  el.slugValue.value = result.slug || "";
+  el.shortSummary.value = result.short_summary || "";
+  el.altText.value = result.alt_text || "";
+  el.imgTitle.value = result.img_title || "";
+  el.captionText.value = result.caption || "";
+  renderFormattedOutput(result);
 }
 
 function clearOutput() {
-  els.seoPreview.innerHTML = `<p class="muted">Formatted SEO output will appear here.</p>`;
-  els.focusKeyphrase.value = "";
-  els.seoTitle.value = "";
-  els.metaDescription.value = "";
-  els.slug.value = "";
-  els.shortSummary.value = "";
-  els.wpHtmlOutput.value = "";
-  state.processed = null;
+  state.result = null;
+  state.croppedImageData = "";
+  el.h1Title.value = "";
+  el.introText.value = "";
+  el.headingsText.value = "";
+  el.bodyText.value = "";
+  el.focusKeyphrase.value = "";
+  el.seoTitle.value = "";
+  el.metaDescription.value = "";
+  el.slugValue.value = "";
+  el.shortSummary.value = "";
+  el.altText.value = "";
+  el.imgTitle.value = "";
+  el.captionText.value = "";
+  el.previewImage.src = "";
+  el.imageMeta.textContent = "No image selected.";
+  renderFormattedOutput(null);
+  setStatus("Output cleared");
 }
 
-async function copyWpHtml() {
-  const text = els.wpHtmlOutput.value.trim();
-  if (!text) {
-    showToast("Nothing to copy");
-    return;
-  }
-  await navigator.clipboard.writeText(text);
-  showToast("WP HTML copied");
-}
-
-async function copyField(targetId) {
-  const el = document.getElementById(targetId);
-  if (!el || !el.value) {
-    showToast("Nothing to copy");
-    return;
-  }
-  await navigator.clipboard.writeText(el.value);
-  showToast("Copied");
-}
-
-async function exportTxt() {
-  const text = state.processed?.plain_text || "";
-  if (!text) {
-    showToast("Nothing to export");
-    return;
-  }
-
-  const res = await fetch("/api/export-txt", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ text })
-  });
-
-  const blob = await res.blob();
-  downloadBlob(blob, "seo-output.txt");
-}
-
-async function exportHtml() {
-  if (!state.processed) {
-    showToast("Nothing to export");
-    return;
-  }
-
-  const payload = {
-    h1: state.processed.h1 || "",
-    wp_html: els.wpHtmlOutput.value || ""
-  };
-
-  const res = await fetch("/api/export-html", {
+async function postJson(url, payload) {
+  const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload)
   });
-
-  const blob = await res.blob();
-  downloadBlob(blob, "seo-output.html");
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "Request failed");
+  return data;
 }
+
+el.generateBtn.addEventListener("click", async () => {
+  try {
+    const article = el.articleInput.value.trim();
+    const sceneNotes = el.sceneNotes.value.trim();
+
+    if (!article) {
+      setStatus("Please paste an article first.");
+      return;
+    }
+
+    setStatus("Generating SEO output...");
+    const result = await postJson("/process", { article, scene_notes: sceneNotes });
+    state.result = result;
+    fillFields(result);
+    setStatus("SEO output generated.");
+  } catch (err) {
+    setStatus(err.message);
+  }
+});
+
+el.clearInputBtn.addEventListener("click", () => {
+  el.articleInput.value = "";
+  setStatus("Input cleared");
+});
+
+el.clearOutputBtn.addEventListener("click", clearOutput);
+
+el.copyWpHtmlBtn.addEventListener("click", async () => {
+  try {
+    if (!state.result) {
+      setStatus("Generate SEO output first.");
+      return;
+    }
+
+    syncImageSeoFields();
+    const data = await postJson("/wp-html", {
+      result: state.result,
+      image_data: state.croppedImageData
+    });
+
+    await navigator.clipboard.writeText(data.html || "");
+    setStatus("Copied WordPress-ready HTML.");
+  } catch (err) {
+    setStatus(err.message);
+  }
+});
 
 function downloadBlob(blob, filename) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
   a.download = filename;
-  document.body.appendChild(a);
   a.click();
-  a.remove();
   URL.revokeObjectURL(url);
 }
 
-function loadImage(file) {
-  state.uploadedFile = file;
-  const reader = new FileReader();
-  reader.onload = () => {
-    els.sourceImage.src = reader.result;
-    els.sourceImage.style.display = "block";
-
-    els.sourceImage.onload = () => {
-      initCropBox();
-    };
-  };
-  reader.readAsDataURL(file);
-}
-
-function initCropBox() {
-  const img = els.sourceImage;
-  const box = els.cropBox;
-  const wrap = img.parentElement.getBoundingClientRect();
-  const imgRect = img.getBoundingClientRect();
-
-  const initialWidth = Math.min(imgRect.width * 0.7, 320);
-  const ratio = state.selectedPreset.width / state.selectedPreset.height;
-  const initialHeight = initialWidth / ratio;
-
-  const left = imgRect.left - wrap.left + (imgRect.width - initialWidth) / 2;
-  const top = imgRect.top - wrap.top + (imgRect.height - initialHeight) / 2;
-
-  state.crop = {
-    x: left,
-    y: top,
-    width: initialWidth,
-    height: initialHeight
-  };
-
-  updateCropBox();
-}
-
-function updateCropBox() {
-  const box = els.cropBox;
-  box.style.display = "block";
-  box.style.left = `${state.crop.x}px`;
-  box.style.top = `${state.crop.y}px`;
-  box.style.width = `${state.crop.width}px`;
-  box.style.height = `${state.crop.height}px`;
-}
-
-function setPreset(w, h) {
-  state.selectedPreset = { width: Number(w), height: Number(h) };
-  if (els.sourceImage.src) {
-    initCropBox();
-  }
-  showToast(`Preset ${w}x${h} ready`);
-}
-
-function attachCropEvents() {
-  els.cropBox.addEventListener("mousedown", (e) => {
-    state.dragging = true;
-    const rect = els.cropBox.getBoundingClientRect();
-    state.dragOffsetX = e.clientX - rect.left;
-    state.dragOffsetY = e.clientY - rect.top;
-  });
-
-  window.addEventListener("mousemove", (e) => {
-    if (!state.dragging) return;
-
-    const wrapRect = els.sourceImage.parentElement.getBoundingClientRect();
-    const imgRect = els.sourceImage.getBoundingClientRect();
-
-    let x = e.clientX - wrapRect.left - state.dragOffsetX;
-    let y = e.clientY - wrapRect.top - state.dragOffsetY;
-
-    const minX = imgRect.left - wrapRect.left;
-    const minY = imgRect.top - wrapRect.top;
-    const maxX = minX + imgRect.width - state.crop.width;
-    const maxY = minY + imgRect.height - state.crop.height;
-
-    x = Math.max(minX, Math.min(x, maxX));
-    y = Math.max(minY, Math.min(y, maxY));
-
-    state.crop.x = x;
-    state.crop.y = y;
-    updateCropBox();
-  });
-
-  window.addEventListener("mouseup", () => {
-    state.dragging = false;
-  });
-}
-
-function getRealCropValues() {
-  const imgRect = els.sourceImage.getBoundingClientRect();
-  const wrapRect = els.sourceImage.parentElement.getBoundingClientRect();
-
-  const displayX = state.crop.x - (imgRect.left - wrapRect.left);
-  const displayY = state.crop.y - (imgRect.top - wrapRect.top);
-
-  const scaleX = els.sourceImage.naturalWidth / imgRect.width;
-  const scaleY = els.sourceImage.naturalHeight / imgRect.height;
-
-  return {
-    x: Math.round(displayX * scaleX),
-    y: Math.round(displayY * scaleY),
-    width: Math.round(state.crop.width * scaleX),
-    height: Math.round(state.crop.height * scaleY)
-  };
-}
-
-async function cropImage(exportUnder100kb = false) {
-  if (!state.uploadedFile) {
-    showToast("Please open an image first");
-    return;
-  }
-
-  const real = getRealCropValues();
-  const form = new FormData();
-  form.append("image", state.uploadedFile);
-  form.append("x", real.x);
-  form.append("y", real.y);
-  form.append("width", real.width);
-  form.append("height", real.height);
-  form.append("target_width", state.selectedPreset.width);
-  form.append("target_height", state.selectedPreset.height);
-  form.append("export_under_100kb", exportUnder100kb ? "true" : "false");
-
-  const res = await fetch("/api/crop-image", {
-    method: "POST",
-    body: form
-  });
-
-  const data = await res.json();
-  if (!data.ok) {
-    showToast(data.error || "Crop failed");
-    return null;
-  }
-
-  state.latestImageDataUri = data.image_data_uri;
-  els.croppedPreview.src = data.image_data_uri;
-  els.imageMeta.textContent = exportUnder100kb
-    ? `Preview size: ${data.width} x ${data.height} • ${data.size_kb}KB`
-    : `Preview size: ${data.width} x ${data.height}`;
-
-  showToast(exportUnder100kb ? "Exported preview under 100KB" : "Crop applied");
-  updateWpHtmlWithImage();
-  return data;
-}
-
-function updateWpHtmlWithImage() {
-  if (!state.processed) return;
-
-  const h1 = state.processed.h1 || "";
-  const intro = state.processed.intro || "";
-  const structure = state.processed.structure || [];
-  const altText = els.altText.value || h1 || "Featured image";
-  const imgTitle = els.imgTitle.value || h1 || "Featured image";
-  const caption = els.caption.value || "";
-
-  let htmlParts = [];
-
-  if (state.latestImageDataUri) {
-    let fig = `<figure class="wp-block-image size-full featured-image-wrap">`;
-    fig += `<img src="${state.latestImageDataUri}" alt="${escapeHtml(altText)}" title="${escapeHtml(imgTitle)}" />`;
-    if (caption) fig += `<figcaption>${escapeHtml(caption)}</figcaption>`;
-    fig += `</figure>`;
-    htmlParts.push(fig);
-  }
-
-  if (h1) htmlParts.push(`<h1>${escapeHtml(h1)}</h1>`);
-  if (intro) htmlParts.push(`<p>${escapeHtml(intro)}</p>`);
-
-  structure.forEach(sec => {
-    if (sec.h2) htmlParts.push(`<h2>${escapeHtml(sec.h2)}</h2>`);
-    (sec.subsections || []).forEach(sub => {
-      if (sub.h3) htmlParts.push(`<h3>${escapeHtml(sub.h3)}</h3>`);
-      if (sub.h4) htmlParts.push(`<h4>${escapeHtml(sub.h4)}</h4>`);
-      if (sub.body) {
-        const paragraphs = sub.body.split("\n\n").filter(Boolean);
-        paragraphs.forEach(p => htmlParts.push(`<p>${escapeHtml(p)}</p>`));
-      }
-    });
-  });
-
-  els.wpHtmlOutput.value = htmlParts.join("\n");
-}
-
-async function generateImageSeo() {
-  const payload = {
-    h1: state.processed?.h1 || "",
-    intro: state.processed?.intro || "",
-    focus_keyphrase: els.focusKeyphrase.value || "",
-    scene_notes: els.sceneNotes.value || ""
-  };
-
-  const res = await fetch("/api/image-seo", {
+async function exportFile(url, filename, payload) {
+  const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload)
   });
 
-  const data = await res.json();
-  if (!data.ok) {
-    showToast("Image SEO failed");
+  if (!res.ok) {
+    let msg = "Export failed";
+    try {
+      const data = await res.json();
+      msg = data.error || msg;
+    } catch (_) {}
+    throw new Error(msg);
+  }
+
+  const blob = await res.blob();
+  downloadBlob(blob, filename);
+}
+
+function buildFilename() {
+  const value = (el.slugValue.value || "seo-output").trim();
+  return value || "seo-output";
+}
+
+function syncImageSeoFields() {
+  if (!state.result) return;
+  state.result.alt_text = el.altText.value.trim();
+  state.result.img_title = el.imgTitle.value.trim();
+  state.result.caption = el.captionText.value.trim();
+}
+
+el.exportTxtBtn.addEventListener("click", async () => {
+  try {
+    if (!state.result) {
+      setStatus("Nothing to export.");
+      return;
+    }
+    await exportFile("/export/txt", `${buildFilename()}.txt`, {
+      content: state.result.generated_plain_text || "",
+      filename: buildFilename()
+    });
+    setStatus("TXT exported.");
+  } catch (err) {
+    setStatus(err.message);
+  }
+});
+
+el.exportHtmlBtn.addEventListener("click", async () => {
+  try {
+    if (!state.result) {
+      setStatus("Nothing to export.");
+      return;
+    }
+    syncImageSeoFields();
+    await exportFile("/export/html", `${buildFilename()}.html`, {
+      result: state.result,
+      image_data: state.croppedImageData,
+      filename: buildFilename()
+    });
+    setStatus("HTML exported.");
+  } catch (err) {
+    setStatus(err.message);
+  }
+});
+
+el.exportDocxBtn.addEventListener("click", async () => {
+  try {
+    if (!state.result) {
+      setStatus("Nothing to export.");
+      return;
+    }
+    syncImageSeoFields();
+    await exportFile("/export/docx", `${buildFilename()}.docx`, {
+      result: state.result,
+      image_data: state.croppedImageData,
+      filename: buildFilename()
+    });
+    setStatus("DOCX exported.");
+  } catch (err) {
+    setStatus(err.message);
+  }
+});
+
+function fitCanvas() {
+  const rect = el.imageCanvas.getBoundingClientRect();
+  el.imageCanvas.width = Math.max(300, rect.width);
+  el.imageCanvas.height = 420;
+  drawCanvas();
+}
+
+window.addEventListener("resize", fitCanvas);
+
+el.imageUpload.addEventListener("change", (e) => {
+  const file = e.target.files?.[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = () => {
+    const img = new Image();
+    img.onload = () => {
+      state.originalImage = img;
+      state.selection = null;
+      state.croppedImageData = "";
+      el.previewImage.src = "";
+      el.imageMeta.textContent = `Original image: ${img.width} x ${img.height}`;
+      fitCanvas();
+      setStatus("Image loaded.");
+    };
+    img.src = reader.result;
+  };
+  reader.readAsDataURL(file);
+});
+
+function drawCanvas() {
+  ctx.clearRect(0, 0, el.imageCanvas.width, el.imageCanvas.height);
+
+  if (!state.originalImage) {
+    ctx.fillStyle = "#09101d";
+    ctx.fillRect(0, 0, el.imageCanvas.width, el.imageCanvas.height);
+    ctx.fillStyle = "#94a8ca";
+    ctx.font = "16px Segoe UI";
+    ctx.fillText("Open image to start cropping", 24, 40);
     return;
   }
 
-  els.altText.value = data.alt_text || "";
-  els.imgTitle.value = data.img_title || "";
-  els.caption.value = data.caption || "";
-  updateWpHtmlWithImage();
-  showToast("Generated image SEO");
+  const img = state.originalImage;
+  const scale = Math.min(el.imageCanvas.width / img.width, el.imageCanvas.height / img.height);
+  const drawWidth = img.width * scale;
+  const drawHeight = img.height * scale;
+  const offsetX = (el.imageCanvas.width - drawWidth) / 2;
+  const offsetY = (el.imageCanvas.height - drawHeight) / 2;
+
+  state.scaleX = img.width / drawWidth;
+  state.scaleY = img.height / drawHeight;
+  state.drawMeta = { offsetX, offsetY, drawWidth, drawHeight };
+
+  ctx.drawImage(img, offsetX, offsetY, drawWidth, drawHeight);
+
+  if (state.selection) {
+    const s = state.selection;
+    ctx.strokeStyle = "#f59e0b";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(s.x, s.y, s.w, s.h);
+
+    ctx.fillStyle = "rgba(245, 158, 11, 0.15)";
+    ctx.fillRect(s.x, s.y, s.w, s.h);
+  }
 }
 
-els.generateBtn.addEventListener("click", generateArticle);
-els.clearInputBtn.addEventListener("click", clearInput);
-els.clearOutputBtn.addEventListener("click", clearOutput);
-els.copyWpHtmlBtn.addEventListener("click", copyWpHtml);
-els.exportTxtBtn.addEventListener("click", exportTxt);
-els.exportHtmlBtn.addEventListener("click", exportHtml);
+function clampSelection(sel) {
+  if (!state.drawMeta) return sel;
+  const { offsetX, offsetY, drawWidth, drawHeight } = state.drawMeta;
 
-document.querySelectorAll("[data-copy-target]").forEach(btn => {
-  btn.addEventListener("click", () => copyField(btn.dataset.copyTarget));
+  let x = Math.max(offsetX, Math.min(sel.x, offsetX + drawWidth));
+  let y = Math.max(offsetY, Math.min(sel.y, offsetY + drawHeight));
+  let w = sel.w;
+  let h = sel.h;
+
+  if (x + w > offsetX + drawWidth) w = offsetX + drawWidth - x;
+  if (y + h > offsetY + drawHeight) h = offsetY + drawHeight - y;
+
+  return {
+    x,
+    y,
+    w: Math.max(1, w),
+    h: Math.max(1, h)
+  };
+}
+
+el.imageCanvas.addEventListener("mousedown", (e) => {
+  if (!state.originalImage) return;
+  const rect = el.imageCanvas.getBoundingClientRect();
+  state.dragging = true;
+  state.startX = e.clientX - rect.left;
+  state.startY = e.clientY - rect.top;
+  state.selection = { x: state.startX, y: state.startY, w: 1, h: 1 };
+  drawCanvas();
 });
 
-els.imageInput.addEventListener("change", (e) => {
-  const file = e.target.files?.[0];
-  if (file) loadImage(file);
+el.imageCanvas.addEventListener("mousemove", (e) => {
+  if (!state.dragging || !state.originalImage) return;
+  const rect = el.imageCanvas.getBoundingClientRect();
+  const currentX = e.clientX - rect.left;
+  const currentY = e.clientY - rect.top;
+
+  const x = Math.min(state.startX, currentX);
+  const y = Math.min(state.startY, currentY);
+  const w = Math.abs(currentX - state.startX);
+  const h = Math.abs(currentY - state.startY);
+
+  state.selection = clampSelection({ x, y, w, h });
+  drawCanvas();
 });
 
-document.querySelectorAll(".preset-btn").forEach(btn => {
-  btn.addEventListener("click", () => setPreset(btn.dataset.width, btn.dataset.height));
+window.addEventListener("mouseup", () => {
+  state.dragging = false;
 });
 
-els.applyCropBtn.addEventListener("click", () => cropImage(false));
-els.exportUnder100Btn.addEventListener("click", () => cropImage(true));
-els.generateImageSeoBtn.addEventListener("click", generateImageSeo);
+el.cropCompressBtn.addEventListener("click", async () => {
+  try {
+    if (!state.originalImage || !state.selection) {
+      setStatus("Please select a crop area first.");
+      return;
+    }
 
-["input", "change"].forEach(evt => {
-  els.altText.addEventListener(evt, updateWpHtmlWithImage);
-  els.imgTitle.addEventListener(evt, updateWpHtmlWithImage);
-  els.caption.addEventListener(evt, updateWpHtmlWithImage);
-  els.seoTitle.addEventListener(evt, () => {});
-  els.metaDescription.addEventListener(evt, () => {});
-  els.slug.addEventListener(evt, () => {});
+    const tempCanvas = document.createElement("canvas");
+    const tempCtx = tempCanvas.getContext("2d");
+
+    const { offsetX, offsetY } = state.drawMeta;
+    const sx = (state.selection.x - offsetX) * state.scaleX;
+    const sy = (state.selection.y - offsetY) * state.scaleY;
+    const sw = state.selection.w * state.scaleX;
+    const sh = state.selection.h * state.scaleY;
+
+    tempCanvas.width = Math.max(1, Math.round(sw));
+    tempCanvas.height = Math.max(1, Math.round(sh));
+
+    tempCtx.drawImage(
+      state.originalImage,
+      sx, sy, sw, sh,
+      0, 0, tempCanvas.width, tempCanvas.height
+    );
+
+    const croppedData = tempCanvas.toDataURL("image/jpeg", 0.95);
+    const data = await postJson("/compress-image", { image_data: croppedData });
+    state.croppedImageData = data.image_data || "";
+    el.previewImage.src = state.croppedImageData;
+    el.imageMeta.textContent = `Compressed output: ${data.size_kb}KB`;
+    setStatus(`Image compressed to ${data.size_kb}KB.`);
+  } catch (err) {
+    setStatus(err.message);
+  }
 });
 
-attachCropEvents();
+el.resetImageBtn.addEventListener("click", () => {
+  state.originalImage = null;
+  state.selection = null;
+  state.croppedImageData = "";
+  el.imageUpload.value = "";
+  el.previewImage.src = "";
+  el.imageMeta.textContent = "No image selected.";
+  drawCanvas();
+  setStatus("Image cleared.");
+});
+
+fitCanvas();
