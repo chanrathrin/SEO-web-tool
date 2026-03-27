@@ -3,136 +3,199 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>SEO News Formatter + Thumbnail Crop Tool</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+  <title>Summary AI V8 Web</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
   <div class="app-shell">
-    <header class="topbar">
+    <header class="app-header card">
       <div>
-        <h1>SEO News Formatter + Thumbnail Crop Tool</h1>
-        <p>Web version for article formatting, WordPress HTML, DOCX/TXT export, and image crop/compress.</p>
+        <h1>Summary AI V8 Web</h1>
+        <p>Full same-tools version</p>
       </div>
+      <div id="statusBar" class="status-pill">Ready</div>
     </header>
 
-    <main class="layout">
-      <section class="panel">
-        <div class="panel-head">
+    <section class="grid two-col">
+      <div class="card">
+        <div class="section-head">
           <h2>Input Article</h2>
-          <div class="toolbar">
-            <button id="generateBtn" class="btn btn-warning">Generate News Format</button>
-            <button id="clearInputBtn" class="btn btn-danger">Clear Input</button>
-          </div>
         </div>
 
-        <textarea id="articleInput" placeholder="Paste your article here..."></textarea>
-
-        <div class="field-group">
-          <label for="sceneNotes">Vision / Scene Notes (optional)</label>
-          <input id="sceneNotes" type="text" placeholder="Example: city skyline, business meeting, technology event" />
+        <div class="toolbar">
+          <button class="btn btn-success" id="generateBtn">Generate News Format</button>
+          <button class="btn btn-danger" id="clearInputBtn">Clear Input</button>
         </div>
-      </section>
 
-      <section class="panel">
-        <div class="panel-head">
+        <textarea id="articleInput" placeholder="Paste your article here."></textarea>
+      </div>
+
+      <div class="card">
+        <div class="section-head">
           <h2>SEO Output</h2>
-          <div class="toolbar">
-            <button id="copyWpHtmlBtn" class="btn btn-success">Copy WP HTML</button>
-            <button id="exportHtmlBtn" class="btn btn-purple">Export HTML</button>
-            <button id="exportDocxBtn" class="btn btn-primary">Export DOCX</button>
-            <button id="exportTxtBtn" class="btn btn-slate">Export TXT</button>
-            <button id="clearOutputBtn" class="btn btn-pink">Clear Output</button>
-          </div>
         </div>
 
-        <div class="featured-box">
-          <div class="featured-left">
-            <h3>Featured Image</h3>
-            <input id="imageUpload" type="file" accept="image/*" />
-            <div class="crop-tools">
-              <button id="cropCompressBtn" class="btn btn-warning">Crop + Export &lt;100KB</button>
-              <button id="resetImageBtn" class="btn btn-secondary">Clear Image</button>
+        <div class="toolbar">
+          <button class="btn btn-primary" id="copyWpHtmlBtn">Copy WP HTML</button>
+          <button class="btn btn-secondary" id="copyAllOutputBtn">Copy All Output</button>
+          <button class="btn btn-danger" id="clearOutputBtn">Clear Output</button>
+          <button class="btn btn-purple" id="exportHtmlBtn">Export HTML</button>
+          <button class="btn btn-pink" id="exportDocxBtn">Export DOCX</button>
+          <button class="btn btn-warning" id="exportTxtBtn">Export TXT</button>
+        </div>
+
+        <div id="seoPreview" class="preview-box">
+          <p class="placeholder-text">Formatted SEO output will appear here.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="grid two-col mt-20">
+      <div class="card">
+        <div class="section-head">
+          <h2>Copy Output Sections</h2>
+        </div>
+
+        <div class="copy-grid">
+          <button class="btn btn-secondary copy-section-btn" data-key="h1_copy">H1 Title</button>
+          <button class="btn btn-secondary copy-section-btn" data-key="intro_copy">Introduction</button>
+          <button class="btn btn-secondary copy-section-btn" data-key="headings_copy">Section Headings</button>
+          <button class="btn btn-secondary copy-section-btn" data-key="body_copy">Main Content Body</button>
+          <button class="btn btn-secondary copy-section-btn" data-key="focus_keyphrase_copy">Focus Keyphrase</button>
+          <button class="btn btn-secondary copy-section-btn" data-key="seo_title_copy">SEO Title</button>
+          <button class="btn btn-secondary copy-section-btn" data-key="meta_description_copy">Meta Description</button>
+          <button class="btn btn-secondary copy-section-btn" data-key="slug_copy">Slug</button>
+          <button class="btn btn-secondary copy-section-btn" data-key="short_summary_copy">Short Summary</button>
+        </div>
+
+        <div class="section-head mt-20">
+          <h2>SEO Fields</h2>
+        </div>
+
+        <div class="field-grid">
+          <label>
+            <span>Focus Keyphrase</span>
+            <input type="text" id="focusKeyphrase">
+          </label>
+
+          <label>
+            <span>SEO Title</span>
+            <input type="text" id="seoTitle">
+          </label>
+
+          <label class="full">
+            <span>Meta Description</span>
+            <textarea id="metaDescription" rows="3"></textarea>
+          </label>
+
+          <label>
+            <span>Slug</span>
+            <input type="text" id="slug">
+          </label>
+
+          <label class="full">
+            <span>Short Summary</span>
+            <textarea id="shortSummary" rows="3"></textarea>
+          </label>
+        </div>
+
+        <div class="toolbar mt-16">
+          <button class="btn btn-secondary copy-field-btn" data-target="focusKeyphrase">Copy Focus Keyphrase</button>
+          <button class="btn btn-secondary copy-field-btn" data-target="seoTitle">Copy SEO Title</button>
+          <button class="btn btn-secondary copy-field-btn" data-target="metaDescription">Copy Meta Description</button>
+          <button class="btn btn-secondary copy-field-btn" data-target="slug">Copy Slug</button>
+          <button class="btn btn-secondary copy-field-btn" data-target="shortSummary">Copy Short Summary</button>
+        </div>
+
+        <div class="section-head mt-20">
+          <h2>SEO Title Options</h2>
+        </div>
+        <textarea id="titleOptions" rows="5" readonly></textarea>
+
+        <div class="section-head mt-20">
+          <h2>Meta Description Options</h2>
+        </div>
+        <textarea id="metaOptions" rows="5" readonly></textarea>
+      </div>
+
+      <div class="card">
+        <div class="section-head">
+          <h2>Featured Image + Crop Tool</h2>
+        </div>
+
+        <div class="toolbar wrap">
+          <label class="btn btn-primary file-btn">
+            Import Featured Image
+            <input type="file" id="imageInput" accept="image/*" hidden>
+          </label>
+          <button class="btn btn-secondary preset-btn" data-width="1200" data-height="366">1200x366</button>
+          <button class="btn btn-secondary preset-btn" data-width="800" data-height="445">800x445</button>
+          <button class="btn btn-secondary preset-btn" data-width="1200" data-height="630">1200x630</button>
+          <button class="btn btn-success" id="applyCropBtn">Apply Crop</button>
+          <button class="btn btn-warning" id="useCroppedInSeoBtn">Use Crop In SEO Output</button>
+          <button class="btn btn-pink" id="exportUnder100Btn">Export &lt;100KB</button>
+        </div>
+
+        <div class="crop-grid">
+          <div class="card inset-card">
+            <div class="mini-title">Image Canvas</div>
+            <div class="canvas-wrap" id="canvasWrap">
+              <img id="sourceImage" alt="">
+              <div id="cropBox">
+                <span class="resize-handle br"></span>
+              </div>
             </div>
-            <div class="canvas-wrap">
-              <canvas id="imageCanvas"></canvas>
-            </div>
-            <p class="help-text">Drag on the image to crop. Then click Crop + Export &lt;100KB.</p>
           </div>
 
-          <div class="featured-right">
-            <h3>Compressed Preview</h3>
-            <img id="previewImage" alt="" />
-            <div id="imageMeta" class="small-meta">No image selected.</div>
+          <div class="card inset-card">
+            <div class="mini-title">Live Preview</div>
+            <img id="cropPreview" alt="">
+            <div id="previewMeta" class="small muted">Preset output size will appear here</div>
           </div>
         </div>
 
-        <div class="quick-grid">
-          <div class="field-group">
-            <label>H1 Title</label>
-            <input id="h1Title" type="text" readonly />
-          </div>
-          <div class="field-group">
-            <label>Introduction</label>
-            <textarea id="introText" readonly></textarea>
-          </div>
-          <div class="field-group">
-            <label>Section Headings</label>
-            <textarea id="headingsText" readonly></textarea>
-          </div>
-          <div class="field-group">
-            <label>Main Content Body</label>
-            <textarea id="bodyText" readonly></textarea>
-          </div>
+        <div class="section-head mt-20">
+          <h2>Featured Image SEO</h2>
         </div>
 
-        <div class="seo-grid">
-          <div class="field-group">
-            <label>Focus Keyphrase</label>
-            <input id="focusKeyphrase" type="text" readonly />
-          </div>
-          <div class="field-group">
-            <label>SEO Title</label>
-            <input id="seoTitle" type="text" readonly />
-          </div>
-          <div class="field-group">
-            <label>Meta Description</label>
-            <textarea id="metaDescription" readonly></textarea>
-          </div>
-          <div class="field-group">
-            <label>Slug (URL)</label>
-            <input id="slugValue" type="text" readonly />
-          </div>
-          <div class="field-group">
-            <label>Short Summary</label>
-            <textarea id="shortSummary" readonly></textarea>
-          </div>
+        <div class="toolbar wrap">
+          <button class="btn btn-success" id="generateImageSeoBtn">Generate Image SEO</button>
+          <button class="btn btn-secondary" id="copyImageSeoBtn">Copy All Image SEO</button>
+          <button class="btn btn-danger" id="clearImageSeoBtn">Clear Image SEO</button>
         </div>
 
-        <div class="seo-grid">
-          <div class="field-group">
-            <label>Alt Text</label>
-            <textarea id="altText"></textarea>
-          </div>
-          <div class="field-group">
-            <label>Img Title</label>
-            <input id="imgTitle" type="text" />
-          </div>
-          <div class="field-group">
-            <label>Caption</label>
-            <textarea id="captionText"></textarea>
-          </div>
-        </div>
+        <div class="field-grid">
+          <label class="full">
+            <span>Scene Notes</span>
+            <input type="text" id="sceneNotes" placeholder="Optional scene notes">
+          </label>
 
-        <div class="field-group">
-          <label>Preview Output</label>
-          <div id="formattedOutput" class="formatted-output">Formatted SEO output will appear here.</div>
-        </div>
-      </section>
-    </main>
+          <label class="full">
+            <span>Alt Text</span>
+            <textarea id="altText" rows="3"></textarea>
+          </label>
 
-    <footer class="statusbar">
-      <span id="statusText">Ready</span>
-    </footer>
+          <label>
+            <span>Img Title</span>
+            <input type="text" id="imgTitle">
+          </label>
+
+          <label>
+            <span>Caption</span>
+            <textarea id="caption" rows="3"></textarea>
+          </label>
+        </div>
+      </div>
+    </section>
+
+    <section class="card mt-20">
+      <div class="section-head">
+        <h2>WordPress HTML Output</h2>
+      </div>
+      <textarea id="wpHtmlOutput" class="code-output" readonly></textarea>
+    </section>
+
+    <div id="toast" class="toast"></div>
   </div>
 
   <script src="{{ url_for('static', filename='script.js') }}"></script>
