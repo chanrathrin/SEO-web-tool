@@ -1,436 +1,696 @@
 const state = {
-  result: null,
-  originalImage: null,
-  croppedImageData: "",
-  selection: null,
-  dragging: false,
-  startX: 0,
-  startY: 0,
-  scaleX: 1,
-  scaleY: 1
+  processed: null,
+  uploadedFile: null,
+  sourceImageLoaded: false,
+  selectedPreset: { width: 1200, height: 366 },
+  latestImageDataUri: "",
+  crop: { x: 40, y: 40, width: 320, height: 98 },
+  dragMode: null,
+  dragOffsetX: 0,
+  dragOffsetY: 0
 };
 
-const el = {
+const els = {
   articleInput: document.getElementById("articleInput"),
+  seoPreview: document.getElementById("seoPreview"),
+  wpHtmlOutput: document.getElementById("wpHtmlOutput"),
+  titleOptions: document.getElementById("titleOptions"),
+  metaOptions: document.getElementById("metaOptions"),
+  focusKeyphrase: document.getElementById("focusKeyphrase"),
+  seoTitle: document.getElementById("seoTitle"),
+  metaDescription: document.getElementById("metaDescription"),
+  slug: document.getElementById("slug"),
+  shortSummary: document.getElementById("shortSummary"),
+
+  imageInput: document.getElementById("imageInput"),
+  sourceImage: document.getElementById("sourceImage"),
+  canvasWrap: document.getElementById("canvasWrap"),
+  cropBox: document.getElementById("cropBox"),
+  cropPreview: document.getElementById("cropPreview"),
+  previewMeta: document.getElementById("previewMeta"),
+
   sceneNotes: document.getElementById("sceneNotes"),
+  altText: document.getElementById("altText"),
+  imgTitle: document.getElementById("imgTitle"),
+  caption: document.getElementById("caption"),
+
+  statusBar: document.getElementById("statusBar"),
+  toast: document.getElementById("toast"),
+
   generateBtn: document.getElementById("generateBtn"),
   clearInputBtn: document.getElementById("clearInputBtn"),
   clearOutputBtn: document.getElementById("clearOutputBtn"),
   copyWpHtmlBtn: document.getElementById("copyWpHtmlBtn"),
+  copyAllOutputBtn: document.getElementById("copyAllOutputBtn"),
   exportHtmlBtn: document.getElementById("exportHtmlBtn"),
   exportDocxBtn: document.getElementById("exportDocxBtn"),
   exportTxtBtn: document.getElementById("exportTxtBtn"),
-  imageUpload: document.getElementById("imageUpload"),
-  cropCompressBtn: document.getElementById("cropCompressBtn"),
-  resetImageBtn: document.getElementById("resetImageBtn"),
-  imageCanvas: document.getElementById("imageCanvas"),
-  previewImage: document.getElementById("previewImage"),
-  imageMeta: document.getElementById("imageMeta"),
-  statusText: document.getElementById("statusText"),
-  h1Title: document.getElementById("h1Title"),
-  introText: document.getElementById("introText"),
-  headingsText: document.getElementById("headingsText"),
-  bodyText: document.getElementById("bodyText"),
-  focusKeyphrase: document.getElementById("focusKeyphrase"),
-  seoTitle: document.getElementById("seoTitle"),
-  metaDescription: document.getElementById("metaDescription"),
-  slugValue: document.getElementById("slugValue"),
-  shortSummary: document.getElementById("shortSummary"),
-  altText: document.getElementById("altText"),
-  imgTitle: document.getElementById("imgTitle"),
-  captionText: document.getElementById("captionText"),
-  formattedOutput: document.getElementById("formattedOutput")
+
+  applyCropBtn: document.getElementById("applyCropBtn"),
+  useCroppedInSeoBtn: document.getElementById("useCroppedInSeoBtn"),
+  exportUnder100Btn: document.getElementById("exportUnder100Btn"),
+  generateImageSeoBtn: document.getElementById("generateImageSeoBtn"),
+  copyImageSeoBtn: document.getElementById("copyImageSeoBtn"),
+  clearImageSeoBtn: document.getElementById("clearImageSeoBtn")
 };
 
-const ctx = el.imageCanvas.getContext("2d");
-
 function setStatus(text) {
-  el.statusText.textContent = text;
+  els.statusBar.textContent = text;
 }
 
-function escapeHtml(str) {
-  return (str || "").replace(/[&<>"']/g, (m) => ({
-    "&": "&amp;",
-    "<": "&lt;",
-    ">": "&gt;",
-    '"': "&quot;",
-    "'": "&#039;"
-  }[m]));
+function showToast(text) {
+  els.toast.textContent = text;
+  els.toast.classList.add("show");
+  clearTimeout(showToast._timer);
+  showToast._timer = setTimeout(() => {
+    els.toast.classList.remove("show");
+  }, 2200);
 }
 
-function renderFormattedOutput(result) {
-  if (!result) {
-    el.formattedOutput.innerHTML = "Formatted SEO output will appear here.";
+function escapeHtml(text) {
+  const div = document.createElement("div");
+  div.textContent = text || "";
+  return div.innerHTML;
+}
+
+function getFieldValue(id) {
+  const el = document.getElementById(id);
+  return (el?.value || "").trim();
+}
+
+async function copyText(text, successMessage = "Copied") {
+  if (!text || !text.trim()) {
+    setStatus("Nothing to copy");
+    showToast("Nothing to copy");
+    return;
+  }
+  await navigator.clipboard.writeText(text);
+  setStatus(successMessage);
+  showToast(successMessage);
+}
+
+function renderPreview() {
+  if (!state.processed) {
+    els.seoPreview.innerHTML = `<p class="placeholder-text">Formatted SEO output will appear here.</p>`;
     return;
   }
 
-  let html = "";
-  if (result.h1) html += `<h1>${escapeHtml(result.h1)}</h1>`;
-  if (result.intro) html += `<p>${escapeHtml(result.intro)}</p>`;
+  const data = state.processed;
+  const html = [];
 
-  (result.structure || []).forEach((sec) => {
-    html += `<h2>${escapeHtml(sec.h2 || "")}</h2>`;
-    (sec.subsections || []).forEach((sub) => {
-      if (sub.h3) html += `<h3>${escapeHtml(sub.h3)}</h3>`;
-      if (sub.h4) html += `<h4>${escapeHtml(sub.h4)}</h4>`;
-      const bodyParts = (sub.body || "").split("\n\n").filter(Boolean);
-      bodyParts.forEach((p) => {
-        html += `<p>${escapeHtml(p)}</p>`;
+  if (data.h1_copy) html.push(`<h1>${escapeHtml(data.h1_copy)}</h1>`);
+  if (data.intro_copy) html.push(`<p>${escapeHtml(data.intro_copy)}</p>`);
+
+  (data.structure_copy || []).forEach(sec => {
+    if (sec.h2) html.push(`<h2>${escapeHtml(sec.h2)}</h2>`);
+    (sec.subsections || []).forEach(sub => {
+      if (sub.h3) html.push(`<h3>${escapeHtml(sub.h3)}</h3>`);
+      if (sub.h4) html.push(`<h4>${escapeHtml(sub.h4)}</h4>`);
+      if (sub.body) {
+        const bodyHtml = escapeHtml(sub.body).replace(/\n\n/g, "<br><br>");
+        html.push(`<p>${bodyHtml}</p>`);
+      }
+    });
+  });
+
+  els.seoPreview.innerHTML = html.join("");
+}
+
+function updateFieldValuesFromProcessed() {
+  if (!state.processed) return;
+  els.focusKeyphrase.value = state.processed.focus_keyphrase_value || "";
+  els.seoTitle.value = state.processed.seo_title_value || "";
+  els.metaDescription.value = state.processed.meta_description_value || "";
+  els.slug.value = state.processed.slug_value || "";
+  els.shortSummary.value = state.processed.short_summary_value || "";
+
+  els.titleOptions.value = (state.processed.seo_title_options || []).join("\n");
+  els.metaOptions.value = (state.processed.meta_options || []).join("\n");
+}
+
+function updateProcessedCopiesFromFields() {
+  if (!state.processed) return;
+  state.processed.focus_keyphrase_copy = els.focusKeyphrase.value.trim();
+  state.processed.focus_keyphrase_value = els.focusKeyphrase.value.trim();
+  state.processed.seo_title_copy = els.seoTitle.value.trim();
+  state.processed.seo_title_value = els.seoTitle.value.trim();
+  state.processed.meta_description_copy = els.metaDescription.value.trim();
+  state.processed.meta_description_value = els.metaDescription.value.trim();
+  state.processed.slug_copy = els.slug.value.trim();
+  state.processed.slug_value = els.slug.value.trim();
+  state.processed.short_summary_copy = els.shortSummary.value.trim();
+  state.processed.short_summary_value = els.shortSummary.value.trim();
+}
+
+function buildWpHtmlFromState() {
+  if (!state.processed) return "";
+
+  const h1 = state.processed.h1_copy || "";
+  const intro = state.processed.intro_copy || "";
+  const structure = state.processed.structure_copy || [];
+  const altText = els.altText.value.trim() || h1 || "Featured image";
+  const imgTitle = els.imgTitle.value.trim() || h1 || "Featured image";
+  const caption = els.caption.value.trim() || "";
+
+  const parts = [];
+
+  if (state.latestImageDataUri) {
+    let fig = `<figure class="wp-block-image size-full featured-image-wrap">`;
+    fig += `<img src="${state.latestImageDataUri}" alt="${escapeHtml(altText)}" title="${escapeHtml(imgTitle)}" />`;
+    if (caption) fig += `<figcaption>${escapeHtml(caption)}</figcaption>`;
+    fig += `</figure>`;
+    parts.push(fig);
+  }
+
+  if (h1) parts.push(`<h1>${escapeHtml(h1)}</h1>`);
+  if (intro) parts.push(`<p>${escapeHtml(intro)}</p>`);
+
+  structure.forEach(sec => {
+    if (sec.h2) parts.push(`<h2>${escapeHtml(sec.h2)}</h2>`);
+    (sec.subsections || []).forEach(sub => {
+      if (sub.h3) parts.push(`<h3>${escapeHtml(sub.h3)}</h3>`);
+      if (sub.h4) parts.push(`<h4>${escapeHtml(sub.h4)}</h4>`);
+      (sub.body || "").split("\n\n").filter(Boolean).forEach(p => {
+        parts.push(`<p>${escapeHtml(p)}</p>`);
       });
     });
   });
 
-  el.formattedOutput.innerHTML = html || "Formatted SEO output will appear here.";
+  return parts.join("\n");
 }
 
-function fillFields(result) {
-  el.h1Title.value = result.h1 || "";
-  el.introText.value = result.intro || "";
-  el.headingsText.value = result.headings_copy || "";
-  el.bodyText.value = result.body_copy || "";
-  el.focusKeyphrase.value = result.focus_keyphrase || "";
-  el.seoTitle.value = result.seo_title || "";
-  el.metaDescription.value = result.meta_description || "";
-  el.slugValue.value = result.slug || "";
-  el.shortSummary.value = result.short_summary || "";
-  el.altText.value = result.alt_text || "";
-  el.imgTitle.value = result.img_title || "";
-  el.captionText.value = result.caption || "";
-  renderFormattedOutput(result);
+function refreshWpHtmlOutput() {
+  els.wpHtmlOutput.value = buildWpHtmlFromState();
+}
+
+async function generateArticle() {
+  const article = els.articleInput.value.trim();
+  if (!article) {
+    setStatus("Please paste an article first");
+    showToast("Please paste an article first");
+    return;
+  }
+
+  try {
+    const res = await fetch("/api/process", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ article })
+    });
+    const data = await res.json();
+
+    if (!data.ok) {
+      setStatus(data.error || "Failed to generate");
+      showToast(data.error || "Failed");
+      return;
+    }
+
+    state.processed = data;
+    renderPreview();
+    updateFieldValuesFromProcessed();
+    refreshWpHtmlOutput();
+    setStatus("SEO output generated - HTML and DOCX export ready");
+    showToast("SEO output generated");
+  } catch (err) {
+    setStatus("Generate failed");
+    showToast("Generate failed");
+  }
+}
+
+function clearInput() {
+  els.articleInput.value = "";
+  setStatus("Input cleared");
+  showToast("Input cleared");
+}
+
+function clearImageSeoFields() {
+  els.sceneNotes.value = "";
+  els.altText.value = "";
+  els.imgTitle.value = "";
+  els.caption.value = "";
+  refreshWpHtmlOutput();
+  setStatus("Image SEO cleared");
+  showToast("Image SEO cleared");
 }
 
 function clearOutput() {
-  state.result = null;
-  state.croppedImageData = "";
-  el.h1Title.value = "";
-  el.introText.value = "";
-  el.headingsText.value = "";
-  el.bodyText.value = "";
-  el.focusKeyphrase.value = "";
-  el.seoTitle.value = "";
-  el.metaDescription.value = "";
-  el.slugValue.value = "";
-  el.shortSummary.value = "";
-  el.altText.value = "";
-  el.imgTitle.value = "";
-  el.captionText.value = "";
-  el.previewImage.src = "";
-  el.imageMeta.textContent = "No image selected.";
-  renderFormattedOutput(null);
+  state.processed = null;
+  state.latestImageDataUri = "";
+  state.uploadedFile = null;
+  state.sourceImageLoaded = false;
+
+  els.seoPreview.innerHTML = `<p class="placeholder-text">Formatted SEO output will appear here.</p>`;
+  els.wpHtmlOutput.value = "";
+  els.titleOptions.value = "";
+  els.metaOptions.value = "";
+
+  els.focusKeyphrase.value = "";
+  els.seoTitle.value = "";
+  els.metaDescription.value = "";
+  els.slug.value = "";
+  els.shortSummary.value = "";
+
+  clearImageSeoFields();
+
+  els.imageInput.value = "";
+  els.sourceImage.src = "";
+  els.sourceImage.style.display = "none";
+  els.cropBox.style.display = "none";
+  els.cropPreview.src = "";
+  els.previewMeta.textContent = "Preset output size will appear here";
+
   setStatus("Output cleared");
+  showToast("Output cleared");
 }
 
-async function postJson(url, payload) {
-  const res = await fetch(url, {
+async function copyAllOutput() {
+  const payload = els.wpHtmlOutput.value.trim() || state.processed?.plain_text || "";
+  await copyText(payload, "Copied all output");
+}
+
+async function copyWpHtml() {
+  await copyText(els.wpHtmlOutput.value, "Copied WordPress-ready HTML");
+}
+
+async function copySection(key) {
+  if (!state.processed) {
+    setStatus("Generate SEO output first");
+    showToast("Generate SEO output first");
+    return;
+  }
+  updateProcessedCopiesFromFields();
+  await copyText(state.processed[key] || "", "Copied section");
+}
+
+async function copyField(targetId) {
+  await copyText(getFieldValue(targetId), "Copied field");
+}
+
+async function copyAllImageSeo() {
+  const payload = [
+    `Alt Text: ${els.altText.value.trim()}`,
+    `Img Title: ${els.imgTitle.value.trim()}`,
+    `Caption: ${els.caption.value.trim()}`
+  ].join("\n");
+
+  const normalized = payload.replace("Alt Text: ", "").replace("Img Title: ", "").replace("Caption: ", "").trim();
+  if (!normalized) {
+    setStatus("No image SEO fields to copy");
+    showToast("No image SEO fields to copy");
+    return;
+  }
+
+  await copyText(payload, "Copied all featured image SEO fields");
+}
+
+async function exportTxt() {
+  const text = state.processed?.plain_text || "";
+  if (!text) {
+    setStatus("Nothing to export");
+    showToast("Nothing to export");
+    return;
+  }
+
+  const res = await fetch("/api/export-txt", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload)
+    body: JSON.stringify({ text })
   });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || "Request failed");
-  return data;
+
+  downloadBlob(await res.blob(), "seo-output.txt");
+  setStatus("TXT exported");
 }
 
-el.generateBtn.addEventListener("click", async () => {
-  try {
-    const article = el.articleInput.value.trim();
-    const sceneNotes = el.sceneNotes.value.trim();
-
-    if (!article) {
-      setStatus("Please paste an article first.");
-      return;
-    }
-
-    setStatus("Generating SEO output...");
-    const result = await postJson("/process", { article, scene_notes: sceneNotes });
-    state.result = result;
-    fillFields(result);
-    setStatus("SEO output generated.");
-  } catch (err) {
-    setStatus(err.message);
+async function exportHtml() {
+  if (!state.processed) {
+    setStatus("Nothing to export");
+    showToast("Nothing to export");
+    return;
   }
-});
+  refreshWpHtmlOutput();
 
-el.clearInputBtn.addEventListener("click", () => {
-  el.articleInput.value = "";
-  setStatus("Input cleared");
-});
+  const res = await fetch("/api/export-html", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      h1: state.processed.h1_copy || "",
+      wp_html: els.wpHtmlOutput.value || ""
+    })
+  });
 
-el.clearOutputBtn.addEventListener("click", clearOutput);
+  downloadBlob(await res.blob(), "seo-output.html");
+  setStatus("HTML exported");
+}
 
-el.copyWpHtmlBtn.addEventListener("click", async () => {
-  try {
-    if (!state.result) {
-      setStatus("Generate SEO output first.");
-      return;
-    }
-
-    syncImageSeoFields();
-    const data = await postJson("/wp-html", {
-      result: state.result,
-      image_data: state.croppedImageData
-    });
-
-    await navigator.clipboard.writeText(data.html || "");
-    setStatus("Copied WordPress-ready HTML.");
-  } catch (err) {
-    setStatus(err.message);
+async function exportDocx() {
+  if (!state.processed) {
+    setStatus("Nothing to export");
+    showToast("Nothing to export");
+    return;
   }
-});
+  refreshWpHtmlOutput();
+
+  const res = await fetch("/api/export-docx", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      h1: state.processed.h1_copy || "",
+      intro: state.processed.intro_copy || "",
+      structure: state.processed.structure_copy || [],
+      image_data_uri: state.latestImageDataUri || "",
+      caption: els.caption.value.trim()
+    })
+  });
+
+  downloadBlob(await res.blob(), "seo-output.docx");
+  setStatus("DOCX exported");
+}
 
 function downloadBlob(blob, filename) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
   a.download = filename;
+  document.body.appendChild(a);
   a.click();
+  a.remove();
   URL.revokeObjectURL(url);
 }
 
-async function exportFile(url, filename, payload) {
-  const res = await fetch(url, {
+function loadImage(file) {
+  state.uploadedFile = file;
+  const reader = new FileReader();
+  reader.onload = () => {
+    els.sourceImage.onload = () => {
+      els.sourceImage.style.display = "block";
+      state.sourceImageLoaded = true;
+      initCropBox();
+      setStatus("Featured image loaded");
+      showToast("Featured image loaded");
+    };
+    els.sourceImage.src = reader.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+function getImageBoundsInWrap() {
+  const wrapRect = els.canvasWrap.getBoundingClientRect();
+  const imgRect = els.sourceImage.getBoundingClientRect();
+  return {
+    x: imgRect.left - wrapRect.left,
+    y: imgRect.top - wrapRect.top,
+    width: imgRect.width,
+    height: imgRect.height
+  };
+}
+
+function initCropBox() {
+  const imgBounds = getImageBoundsInWrap();
+  const ratio = state.selectedPreset.width / state.selectedPreset.height;
+
+  let width = Math.min(imgBounds.width * 0.72, 360);
+  let height = width / ratio;
+
+  if (height > imgBounds.height * 0.8) {
+    height = imgBounds.height * 0.8;
+    width = height * ratio;
+  }
+
+  state.crop = {
+    x: imgBounds.x + (imgBounds.width - width) / 2,
+    y: imgBounds.y + (imgBounds.height - height) / 2,
+    width,
+    height
+  };
+
+  updateCropBox();
+}
+
+function updateCropBox() {
+  els.cropBox.style.display = "block";
+  els.cropBox.style.left = `${state.crop.x}px`;
+  els.cropBox.style.top = `${state.crop.y}px`;
+  els.cropBox.style.width = `${state.crop.width}px`;
+  els.cropBox.style.height = `${state.crop.height}px`;
+}
+
+function setPreset(width, height) {
+  state.selectedPreset = { width: Number(width), height: Number(height) };
+  if (state.sourceImageLoaded) {
+    initCropBox();
+  }
+  setStatus(`Preset ${width}x${height} selected`);
+  showToast(`Preset ${width}x${height}`);
+}
+
+function clampCrop() {
+  const imgBounds = getImageBoundsInWrap();
+  const ratio = state.selectedPreset.width / state.selectedPreset.height;
+
+  if (state.crop.width < 60) {
+    state.crop.width = 60;
+    state.crop.height = 60 / ratio;
+  }
+
+  if (state.crop.height < 30) {
+    state.crop.height = 30;
+    state.crop.width = 30 * ratio;
+  }
+
+  if (state.crop.width > imgBounds.width) {
+    state.crop.width = imgBounds.width;
+    state.crop.height = state.crop.width / ratio;
+  }
+
+  if (state.crop.height > imgBounds.height) {
+    state.crop.height = imgBounds.height;
+    state.crop.width = state.crop.height * ratio;
+  }
+
+  state.crop.x = Math.max(imgBounds.x, Math.min(state.crop.x, imgBounds.x + imgBounds.width - state.crop.width));
+  state.crop.y = Math.max(imgBounds.y, Math.min(state.crop.y, imgBounds.y + imgBounds.height - state.crop.height));
+}
+
+function enableCropInteractions() {
+  const handle = els.cropBox.querySelector(".resize-handle.br");
+
+  els.cropBox.addEventListener("mousedown", (e) => {
+    if (!state.sourceImageLoaded) return;
+    if (e.target === handle) return;
+
+    state.dragMode = "move";
+    const boxRect = els.cropBox.getBoundingClientRect();
+    state.dragOffsetX = e.clientX - boxRect.left;
+    state.dragOffsetY = e.clientY - boxRect.top;
+    e.preventDefault();
+  });
+
+  handle.addEventListener("mousedown", (e) => {
+    if (!state.sourceImageLoaded) return;
+    state.dragMode = "resize";
+    e.stopPropagation();
+    e.preventDefault();
+  });
+
+  window.addEventListener("mousemove", (e) => {
+    if (!state.dragMode || !state.sourceImageLoaded) return;
+
+    const wrapRect = els.canvasWrap.getBoundingClientRect();
+    const ratio = state.selectedPreset.width / state.selectedPreset.height;
+
+    if (state.dragMode === "move") {
+      state.crop.x = e.clientX - wrapRect.left - state.dragOffsetX;
+      state.crop.y = e.clientY - wrapRect.top - state.dragOffsetY;
+      clampCrop();
+      updateCropBox();
+      return;
+    }
+
+    if (state.dragMode === "resize") {
+      let newWidth = e.clientX - wrapRect.left - state.crop.x;
+      newWidth = Math.max(60, newWidth);
+      let newHeight = newWidth / ratio;
+
+      state.crop.width = newWidth;
+      state.crop.height = newHeight;
+      clampCrop();
+      updateCropBox();
+    }
+  });
+
+  window.addEventListener("mouseup", () => {
+    state.dragMode = null;
+  });
+}
+
+function getRealCropValues() {
+  const imgBounds = getImageBoundsInWrap();
+
+  const displayX = state.crop.x - imgBounds.x;
+  const displayY = state.crop.y - imgBounds.y;
+
+  const scaleX = els.sourceImage.naturalWidth / imgBounds.width;
+  const scaleY = els.sourceImage.naturalHeight / imgBounds.height;
+
+  return {
+    x: Math.round(displayX * scaleX),
+    y: Math.round(displayY * scaleY),
+    width: Math.round(state.crop.width * scaleX),
+    height: Math.round(state.crop.height * scaleY)
+  };
+}
+
+async function cropImage(exportUnder100kb = false) {
+  if (!state.uploadedFile) {
+    setStatus("Please import an image first");
+    showToast("Please import an image first");
+    return null;
+  }
+
+  const real = getRealCropValues();
+  const form = new FormData();
+  form.append("image", state.uploadedFile);
+  form.append("x", real.x);
+  form.append("y", real.y);
+  form.append("width", real.width);
+  form.append("height", real.height);
+  form.append("target_width", state.selectedPreset.width);
+  form.append("target_height", state.selectedPreset.height);
+  form.append("export_under_100kb", exportUnder100kb ? "true" : "false");
+
+  const res = await fetch("/api/crop-image", {
+    method: "POST",
+    body: form
+  });
+
+  const data = await res.json();
+  if (!data.ok) {
+    setStatus(data.error || "Crop failed");
+    showToast(data.error || "Crop failed");
+    return null;
+  }
+
+  els.cropPreview.src = data.image_data_uri;
+  els.previewMeta.textContent = exportUnder100kb
+    ? `Preview size: ${data.width} x ${data.height} • ${data.size_kb}KB`
+    : `Preview size: ${data.width} x ${data.height}`;
+
+  setStatus(exportUnder100kb ? "Exported cropped image under 100KB" : "Crop applied to live preview");
+  showToast(exportUnder100kb ? "Exported <100KB" : "Crop applied");
+
+  return data;
+}
+
+async function applyCrop() {
+  await cropImage(false);
+}
+
+async function useCropInSeoOutput() {
+  const data = await cropImage(false);
+  if (!data) return;
+
+  state.latestImageDataUri = data.image_data_uri;
+  refreshWpHtmlOutput();
+  await generateImageSeo(true);
+  setStatus("Cropped image sent to SEO Output and Yoast image fields updated");
+  showToast("Crop used in SEO output");
+}
+
+async function exportUnder100() {
+  const data = await cropImage(true);
+  if (!data) return;
+
+  const blob = dataUriToBlob(data.image_data_uri);
+  downloadBlob(blob, "cropped-featured-image-under-100kb.jpg");
+}
+
+function dataUriToBlob(dataUri) {
+  const [meta, data] = dataUri.split(",");
+  const mime = (meta.match(/data:(.*?);base64/) || [])[1] || "application/octet-stream";
+  const binary = atob(data);
+  const arr = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) arr[i] = binary.charCodeAt(i);
+  return new Blob([arr], { type: mime });
+}
+
+async function generateImageSeo(silent = false) {
+  const payload = {
+    h1: state.processed?.h1_copy || "",
+    intro: state.processed?.intro_copy || "",
+    focus_keyphrase: els.focusKeyphrase.value.trim() || "",
+    scene_notes: els.sceneNotes.value.trim() || ""
+  };
+
+  const res = await fetch("/api/image-seo", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload)
   });
 
-  if (!res.ok) {
-    let msg = "Export failed";
-    try {
-      const data = await res.json();
-      msg = data.error || msg;
-    } catch (_) {}
-    throw new Error(msg);
-  }
-
-  const blob = await res.blob();
-  downloadBlob(blob, filename);
-}
-
-function buildFilename() {
-  const value = (el.slugValue.value || "seo-output").trim();
-  return value || "seo-output";
-}
-
-function syncImageSeoFields() {
-  if (!state.result) return;
-  state.result.alt_text = el.altText.value.trim();
-  state.result.img_title = el.imgTitle.value.trim();
-  state.result.caption = el.captionText.value.trim();
-}
-
-el.exportTxtBtn.addEventListener("click", async () => {
-  try {
-    if (!state.result) {
-      setStatus("Nothing to export.");
-      return;
-    }
-    await exportFile("/export/txt", `${buildFilename()}.txt`, {
-      content: state.result.generated_plain_text || "",
-      filename: buildFilename()
-    });
-    setStatus("TXT exported.");
-  } catch (err) {
-    setStatus(err.message);
-  }
-});
-
-el.exportHtmlBtn.addEventListener("click", async () => {
-  try {
-    if (!state.result) {
-      setStatus("Nothing to export.");
-      return;
-    }
-    syncImageSeoFields();
-    await exportFile("/export/html", `${buildFilename()}.html`, {
-      result: state.result,
-      image_data: state.croppedImageData,
-      filename: buildFilename()
-    });
-    setStatus("HTML exported.");
-  } catch (err) {
-    setStatus(err.message);
-  }
-});
-
-el.exportDocxBtn.addEventListener("click", async () => {
-  try {
-    if (!state.result) {
-      setStatus("Nothing to export.");
-      return;
-    }
-    syncImageSeoFields();
-    await exportFile("/export/docx", `${buildFilename()}.docx`, {
-      result: state.result,
-      image_data: state.croppedImageData,
-      filename: buildFilename()
-    });
-    setStatus("DOCX exported.");
-  } catch (err) {
-    setStatus(err.message);
-  }
-});
-
-function fitCanvas() {
-  const rect = el.imageCanvas.getBoundingClientRect();
-  el.imageCanvas.width = Math.max(300, rect.width);
-  el.imageCanvas.height = 420;
-  drawCanvas();
-}
-
-window.addEventListener("resize", fitCanvas);
-
-el.imageUpload.addEventListener("change", (e) => {
-  const file = e.target.files?.[0];
-  if (!file) return;
-
-  const reader = new FileReader();
-  reader.onload = () => {
-    const img = new Image();
-    img.onload = () => {
-      state.originalImage = img;
-      state.selection = null;
-      state.croppedImageData = "";
-      el.previewImage.src = "";
-      el.imageMeta.textContent = `Original image: ${img.width} x ${img.height}`;
-      fitCanvas();
-      setStatus("Image loaded.");
-    };
-    img.src = reader.result;
-  };
-  reader.readAsDataURL(file);
-});
-
-function drawCanvas() {
-  ctx.clearRect(0, 0, el.imageCanvas.width, el.imageCanvas.height);
-
-  if (!state.originalImage) {
-    ctx.fillStyle = "#09101d";
-    ctx.fillRect(0, 0, el.imageCanvas.width, el.imageCanvas.height);
-    ctx.fillStyle = "#94a8ca";
-    ctx.font = "16px Segoe UI";
-    ctx.fillText("Open image to start cropping", 24, 40);
+  const data = await res.json();
+  if (!data.ok) {
+    setStatus("Image SEO failed");
+    showToast("Image SEO failed");
     return;
   }
 
-  const img = state.originalImage;
-  const scale = Math.min(el.imageCanvas.width / img.width, el.imageCanvas.height / img.height);
-  const drawWidth = img.width * scale;
-  const drawHeight = img.height * scale;
-  const offsetX = (el.imageCanvas.width - drawWidth) / 2;
-  const offsetY = (el.imageCanvas.height - drawHeight) / 2;
+  els.altText.value = data.alt_text || "";
+  els.imgTitle.value = data.img_title || "";
+  els.caption.value = data.caption || "";
+  refreshWpHtmlOutput();
 
-  state.scaleX = img.width / drawWidth;
-  state.scaleY = img.height / drawHeight;
-  state.drawMeta = { offsetX, offsetY, drawWidth, drawHeight };
-
-  ctx.drawImage(img, offsetX, offsetY, drawWidth, drawHeight);
-
-  if (state.selection) {
-    const s = state.selection;
-    ctx.strokeStyle = "#f59e0b";
-    ctx.lineWidth = 2;
-    ctx.strokeRect(s.x, s.y, s.w, s.h);
-
-    ctx.fillStyle = "rgba(245, 158, 11, 0.15)";
-    ctx.fillRect(s.x, s.y, s.w, s.h);
+  if (!silent) {
+    setStatus("Generated Alt Text, Img Title, and Caption for WordPress + Yoast");
+    showToast("Generated image SEO");
   }
 }
 
-function clampSelection(sel) {
-  if (!state.drawMeta) return sel;
-  const { offsetX, offsetY, drawWidth, drawHeight } = state.drawMeta;
-
-  let x = Math.max(offsetX, Math.min(sel.x, offsetX + drawWidth));
-  let y = Math.max(offsetY, Math.min(sel.y, offsetY + drawHeight));
-  let w = sel.w;
-  let h = sel.h;
-
-  if (x + w > offsetX + drawWidth) w = offsetX + drawWidth - x;
-  if (y + h > offsetY + drawHeight) h = offsetY + drawHeight - y;
-
-  return {
-    x,
-    y,
-    w: Math.max(1, w),
-    h: Math.max(1, h)
-  };
+function bindLiveWpUpdates() {
+  [els.altText, els.imgTitle, els.caption, els.focusKeyphrase, els.seoTitle, els.metaDescription, els.slug, els.shortSummary]
+    .forEach(el => {
+      ["input", "change"].forEach(evt => {
+        el.addEventListener(evt, () => {
+          updateProcessedCopiesFromFields();
+          refreshWpHtmlOutput();
+        });
+      });
+    });
 }
 
-el.imageCanvas.addEventListener("mousedown", (e) => {
-  if (!state.originalImage) return;
-  const rect = el.imageCanvas.getBoundingClientRect();
-  state.dragging = true;
-  state.startX = e.clientX - rect.left;
-  state.startY = e.clientY - rect.top;
-  state.selection = { x: state.startX, y: state.startY, w: 1, h: 1 };
-  drawCanvas();
+els.generateBtn.addEventListener("click", generateArticle);
+els.clearInputBtn.addEventListener("click", clearInput);
+els.clearOutputBtn.addEventListener("click", clearOutput);
+els.copyWpHtmlBtn.addEventListener("click", copyWpHtml);
+els.copyAllOutputBtn.addEventListener("click", copyAllOutput);
+els.exportTxtBtn.addEventListener("click", exportTxt);
+els.exportHtmlBtn.addEventListener("click", exportHtml);
+els.exportDocxBtn.addEventListener("click", exportDocx);
+
+document.querySelectorAll(".copy-section-btn").forEach(btn => {
+  btn.addEventListener("click", () => copySection(btn.dataset.key));
 });
 
-el.imageCanvas.addEventListener("mousemove", (e) => {
-  if (!state.dragging || !state.originalImage) return;
-  const rect = el.imageCanvas.getBoundingClientRect();
-  const currentX = e.clientX - rect.left;
-  const currentY = e.clientY - rect.top;
-
-  const x = Math.min(state.startX, currentX);
-  const y = Math.min(state.startY, currentY);
-  const w = Math.abs(currentX - state.startX);
-  const h = Math.abs(currentY - state.startY);
-
-  state.selection = clampSelection({ x, y, w, h });
-  drawCanvas();
+document.querySelectorAll(".copy-field-btn").forEach(btn => {
+  btn.addEventListener("click", () => copyField(btn.dataset.target));
 });
 
-window.addEventListener("mouseup", () => {
-  state.dragging = false;
+els.imageInput.addEventListener("change", (e) => {
+  const file = e.target.files?.[0];
+  if (file) loadImage(file);
 });
 
-el.cropCompressBtn.addEventListener("click", async () => {
-  try {
-    if (!state.originalImage || !state.selection) {
-      setStatus("Please select a crop area first.");
-      return;
-    }
-
-    const tempCanvas = document.createElement("canvas");
-    const tempCtx = tempCanvas.getContext("2d");
-
-    const { offsetX, offsetY } = state.drawMeta;
-    const sx = (state.selection.x - offsetX) * state.scaleX;
-    const sy = (state.selection.y - offsetY) * state.scaleY;
-    const sw = state.selection.w * state.scaleX;
-    const sh = state.selection.h * state.scaleY;
-
-    tempCanvas.width = Math.max(1, Math.round(sw));
-    tempCanvas.height = Math.max(1, Math.round(sh));
-
-    tempCtx.drawImage(
-      state.originalImage,
-      sx, sy, sw, sh,
-      0, 0, tempCanvas.width, tempCanvas.height
-    );
-
-    const croppedData = tempCanvas.toDataURL("image/jpeg", 0.95);
-    const data = await postJson("/compress-image", { image_data: croppedData });
-    state.croppedImageData = data.image_data || "";
-    el.previewImage.src = state.croppedImageData;
-    el.imageMeta.textContent = `Compressed output: ${data.size_kb}KB`;
-    setStatus(`Image compressed to ${data.size_kb}KB.`);
-  } catch (err) {
-    setStatus(err.message);
-  }
+document.querySelectorAll(".preset-btn").forEach(btn => {
+  btn.addEventListener("click", () => setPreset(btn.dataset.width, btn.dataset.height));
 });
 
-el.resetImageBtn.addEventListener("click", () => {
-  state.originalImage = null;
-  state.selection = null;
-  state.croppedImageData = "";
-  el.imageUpload.value = "";
-  el.previewImage.src = "";
-  el.imageMeta.textContent = "No image selected.";
-  drawCanvas();
-  setStatus("Image cleared.");
-});
+els.applyCropBtn.addEventListener("click", applyCrop);
+els.useCroppedInSeoBtn.addEventListener("click", useCropInSeoOutput);
+els.exportUnder100Btn.addEventListener("click", exportUnder100);
+els.generateImageSeoBtn.addEventListener("click", () => generateImageSeo(false));
+els.copyImageSeoBtn.addEventListener("click", copyAllImageSeo);
+els.clearImageSeoBtn.addEventListener("click", clearImageSeoFields);
 
-fitCanvas();
+enableCropInteractions();
+bindLiveWpUpdates();
+refreshWpHtmlOutput();
+setStatus("Ready");
