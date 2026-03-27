@@ -4,161 +4,135 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>SEO News Formatter + Thumbnail Crop Tool</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
 </head>
 <body>
-  <div class="page-shell">
-    <header class="topbar card">
+  <div class="app-shell">
+    <header class="topbar">
       <div>
         <h1>SEO News Formatter + Thumbnail Crop Tool</h1>
-        <p>Flask web version for WordPress + Yoast workflow</p>
+        <p>Web version for article formatting, WordPress HTML, DOCX/TXT export, and image crop/compress.</p>
       </div>
     </header>
 
-    <section class="grid two-col">
-      <div class="card">
-        <div class="section-head">
+    <main class="layout">
+      <section class="panel">
+        <div class="panel-head">
           <h2>Input Article</h2>
-          <p>Paste your article here</p>
-        </div>
-
-        <div class="toolbar">
-          <button class="btn btn-warning" id="generateBtn">Generate News Format</button>
-          <button class="btn btn-danger" id="clearInputBtn">Clear Input</button>
-          <button class="btn btn-purple" id="exportHtmlBtn">Export HTML</button>
-          <button class="btn btn-primary" id="exportTxtBtn">Export TXT</button>
+          <div class="toolbar">
+            <button id="generateBtn" class="btn btn-warning">Generate News Format</button>
+            <button id="clearInputBtn" class="btn btn-danger">Clear Input</button>
+          </div>
         </div>
 
         <textarea id="articleInput" placeholder="Paste your article here..."></textarea>
-      </div>
 
-      <div class="card">
-        <div class="section-head">
+        <div class="field-group">
+          <label for="sceneNotes">Vision / Scene Notes (optional)</label>
+          <input id="sceneNotes" type="text" placeholder="Example: city skyline, business meeting, technology event" />
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
           <h2>SEO Output</h2>
-          <p>Formatted result + WordPress HTML</p>
+          <div class="toolbar">
+            <button id="copyWpHtmlBtn" class="btn btn-success">Copy WP HTML</button>
+            <button id="exportHtmlBtn" class="btn btn-purple">Export HTML</button>
+            <button id="exportDocxBtn" class="btn btn-primary">Export DOCX</button>
+            <button id="exportTxtBtn" class="btn btn-slate">Export TXT</button>
+            <button id="clearOutputBtn" class="btn btn-pink">Clear Output</button>
+          </div>
         </div>
 
-        <div class="toolbar">
-          <button class="btn btn-success" id="copyWpHtmlBtn">Copy WP HTML</button>
-          <button class="btn btn-pink" id="clearOutputBtn">Clear Output</button>
-        </div>
-
-        <div id="seoPreview" class="preview-box">
-          <p class="muted">Formatted SEO output will appear here.</p>
-        </div>
-      </div>
-    </section>
-
-    <section class="grid two-col mt-20">
-      <div class="card">
-        <div class="section-head">
-          <h2>SEO Fields</h2>
-          <p>Auto-generated SEO data</p>
-        </div>
-
-        <div class="field-grid">
-          <label>
-            <span>Focus Keyphrase</span>
-            <input type="text" id="focusKeyphrase" readonly>
-          </label>
-
-          <label>
-            <span>SEO Title</span>
-            <input type="text" id="seoTitle">
-          </label>
-
-          <label class="full">
-            <span>Meta Description</span>
-            <textarea id="metaDescription" rows="3"></textarea>
-          </label>
-
-          <label>
-            <span>Slug (URL)</span>
-            <input type="text" id="slug">
-          </label>
-
-          <label>
-            <span>Short Summary</span>
-            <textarea id="shortSummary" rows="3"></textarea>
-          </label>
-        </div>
-
-        <div class="copy-grid">
-          <button class="btn btn-secondary" data-copy-target="focusKeyphrase">Copy Focus Keyphrase</button>
-          <button class="btn btn-secondary" data-copy-target="seoTitle">Copy SEO Title</button>
-          <button class="btn btn-secondary" data-copy-target="metaDescription">Copy Meta Description</button>
-          <button class="btn btn-secondary" data-copy-target="slug">Copy Slug</button>
-          <button class="btn btn-secondary" data-copy-target="shortSummary">Copy Summary</button>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="section-head">
-          <h2>Featured Image + Image SEO</h2>
-          <p>Upload, crop, preview, and generate Yoast fields</p>
-        </div>
-
-        <div class="toolbar wrap">
-          <label class="btn btn-primary file-btn">
-            Open Image
-            <input type="file" id="imageInput" accept="image/*" hidden>
-          </label>
-
-          <button class="btn btn-secondary preset-btn" data-width="1200" data-height="366">Preset 1200x366</button>
-          <button class="btn btn-secondary preset-btn" data-width="800" data-height="445">Preset 800x445</button>
-          <button class="btn btn-success" id="applyCropBtn">Apply Crop</button>
-          <button class="btn btn-warning" id="exportUnder100Btn">Export &lt;100KB</button>
-          <button class="btn btn-primary" id="generateImageSeoBtn">Generate Image SEO</button>
-        </div>
-
-        <div class="cropper-grid">
-          <div class="cropper-panel">
-            <div class="canvas-wrap">
-              <img id="sourceImage" alt="" />
-              <div id="cropBox"></div>
+        <div class="featured-box">
+          <div class="featured-left">
+            <h3>Featured Image</h3>
+            <input id="imageUpload" type="file" accept="image/*" />
+            <div class="crop-tools">
+              <button id="cropCompressBtn" class="btn btn-warning">Crop + Export &lt;100KB</button>
+              <button id="resetImageBtn" class="btn btn-secondary">Clear Image</button>
             </div>
+            <div class="canvas-wrap">
+              <canvas id="imageCanvas"></canvas>
+            </div>
+            <p class="help-text">Drag on the image to crop. Then click Crop + Export &lt;100KB.</p>
           </div>
 
-          <div class="preview-panel">
-            <div class="preview-label">Live Preview</div>
-            <img id="croppedPreview" alt="" />
-            <div id="imageMeta" class="muted small">No crop preview yet</div>
+          <div class="featured-right">
+            <h3>Compressed Preview</h3>
+            <img id="previewImage" alt="" />
+            <div id="imageMeta" class="small-meta">No image selected.</div>
           </div>
         </div>
 
-        <div class="field-grid mt-16">
-          <label class="full">
-            <span>Scene Notes</span>
-            <input type="text" id="sceneNotes" placeholder="Optional context for image SEO">
-          </label>
-
-          <label>
-            <span>Alt Text</span>
-            <textarea id="altText" rows="3"></textarea>
-          </label>
-
-          <label>
-            <span>Img Title</span>
-            <textarea id="imgTitle" rows="3"></textarea>
-          </label>
-
-          <label class="full">
-            <span>Caption</span>
-            <textarea id="caption" rows="3"></textarea>
-          </label>
+        <div class="quick-grid">
+          <div class="field-group">
+            <label>H1 Title</label>
+            <input id="h1Title" type="text" readonly />
+          </div>
+          <div class="field-group">
+            <label>Introduction</label>
+            <textarea id="introText" readonly></textarea>
+          </div>
+          <div class="field-group">
+            <label>Section Headings</label>
+            <textarea id="headingsText" readonly></textarea>
+          </div>
+          <div class="field-group">
+            <label>Main Content Body</label>
+            <textarea id="bodyText" readonly></textarea>
+          </div>
         </div>
-      </div>
-    </section>
 
-    <section class="card mt-20">
-      <div class="section-head">
-        <h2>WordPress HTML Output</h2>
-        <p>Ready to copy into WordPress</p>
-      </div>
-      <textarea id="wpHtmlOutput" class="code-output" readonly></textarea>
-    </section>
+        <div class="seo-grid">
+          <div class="field-group">
+            <label>Focus Keyphrase</label>
+            <input id="focusKeyphrase" type="text" readonly />
+          </div>
+          <div class="field-group">
+            <label>SEO Title</label>
+            <input id="seoTitle" type="text" readonly />
+          </div>
+          <div class="field-group">
+            <label>Meta Description</label>
+            <textarea id="metaDescription" readonly></textarea>
+          </div>
+          <div class="field-group">
+            <label>Slug (URL)</label>
+            <input id="slugValue" type="text" readonly />
+          </div>
+          <div class="field-group">
+            <label>Short Summary</label>
+            <textarea id="shortSummary" readonly></textarea>
+          </div>
+        </div>
 
-    <div id="toast" class="toast"></div>
+        <div class="seo-grid">
+          <div class="field-group">
+            <label>Alt Text</label>
+            <textarea id="altText"></textarea>
+          </div>
+          <div class="field-group">
+            <label>Img Title</label>
+            <input id="imgTitle" type="text" />
+          </div>
+          <div class="field-group">
+            <label>Caption</label>
+            <textarea id="captionText"></textarea>
+          </div>
+        </div>
+
+        <div class="field-group">
+          <label>Preview Output</label>
+          <div id="formattedOutput" class="formatted-output">Formatted SEO output will appear here.</div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="statusbar">
+      <span id="statusText">Ready</span>
+    </footer>
   </div>
 
   <script src="{{ url_for('static', filename='script.js') }}"></script>
