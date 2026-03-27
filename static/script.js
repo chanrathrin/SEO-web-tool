@@ -1,833 +1,437 @@
-const articleInput = document.getElementById("articleInput");
-const formatBtn = document.getElementById("formatBtn");
-const clearInputBtn = document.getElementById("clearInputBtn");
-const copyAllBtn = document.getElementById("copyAllBtn");
-const clearOutputBtn = document.getElementById("clearOutputBtn");
-const exportTxtBtn = document.getElementById("exportTxtBtn");
-const exportDocxBtn = document.getElementById("exportDocxBtn");
-const outputContainer = document.getElementById("outputContainer");
-const statusText = document.getElementById("statusText");
-const themeToggle = document.getElementById("themeToggle");
-const copyButtons = document.querySelectorAll(".copy-chip");
-const seoTitleLength = document.getElementById("seoTitleLength");
-const metaLength = document.getElementById("metaLength");
-const seoScore = document.getElementById("seoScore");
-const seoNotes = document.getElementById("seoNotes");
-const seoTitleOptions = document.getElementById("seoTitleOptions");
-const metaOptions = document.getElementById("metaOptions");
+const state = {
+  processed: null,
+  selectedPreset: { width: 1200, height: 366 },
+  uploadedFile: null,
+  crop: { x: 20, y: 20, width: 240, height: 120 },
+  dragging: false,
+  dragOffsetX: 0,
+  dragOffsetY: 0,
+  latestImageDataUri: ""
+};
 
-const imageUpload = document.getElementById("imageUpload");
-const imageCanvas = document.getElementById("imageCanvas");
-const rotateLeftBtn = document.getElementById("rotateLeftBtn");
-const rotateRightBtn = document.getElementById("rotateRightBtn");
-const flipXBtn = document.getElementById("flipXBtn");
-const flipYBtn = document.getElementById("flipYBtn");
-const grayscaleBtn = document.getElementById("grayscaleBtn");
-const resetImageBtn = document.getElementById("resetImageBtn");
-const brightnessRange = document.getElementById("brightnessRange");
-const contrastRange = document.getElementById("contrastRange");
-const downloadImageBtn = document.getElementById("downloadImageBtn");
-const toggleCropBtn = document.getElementById("toggleCropBtn");
-const applyCropBtn = document.getElementById("applyCropBtn");
-const overlayTextInput = document.getElementById("overlayTextInput");
-const overlayFontSizeRange = document.getElementById("overlayFontSizeRange");
-const overlayColorInput = document.getElementById("overlayColorInput");
-const overlayXRange = document.getElementById("overlayXRange");
-const overlayYRange = document.getElementById("overlayYRange");
-const applyTextBtn = document.getElementById("applyTextBtn");
-const clearTextBtn = document.getElementById("clearTextBtn");
-const watermarkInput = document.getElementById("watermarkInput");
-const watermarkSizeRange = document.getElementById("watermarkSizeRange");
-const watermarkOpacityRange = document.getElementById("watermarkOpacityRange");
-const applyWatermarkBtn = document.getElementById("applyWatermarkBtn");
-const clearWatermarkBtn = document.getElementById("clearWatermarkBtn");
-const presetYoutubeBtn = document.getElementById("presetYoutubeBtn");
-const presetFacebookBtn = document.getElementById("presetFacebookBtn");
-const presetTikTokBtn = document.getElementById("presetTikTokBtn");
-const presetSquareBtn = document.getElementById("presetSquareBtn");
-const upscaleScaleSelect = document.getElementById("upscaleScaleSelect");
-const upscaleCleanModeSelect = document.getElementById("upscaleCleanModeSelect");
-const upscaleFormatSelect = document.getElementById("upscaleFormatSelect");
-const upscaleSmoothBtn = document.getElementById("upscaleSmoothBtn");
+const els = {
+  articleInput: document.getElementById("articleInput"),
+  seoPreview: document.getElementById("seoPreview"),
+  focusKeyphrase: document.getElementById("focusKeyphrase"),
+  seoTitle: document.getElementById("seoTitle"),
+  metaDescription: document.getElementById("metaDescription"),
+  slug: document.getElementById("slug"),
+  shortSummary: document.getElementById("shortSummary"),
+  wpHtmlOutput: document.getElementById("wpHtmlOutput"),
 
-let currentResult = {};
+  generateBtn: document.getElementById("generateBtn"),
+  clearInputBtn: document.getElementById("clearInputBtn"),
+  exportHtmlBtn: document.getElementById("exportHtmlBtn"),
+  exportTxtBtn: document.getElementById("exportTxtBtn"),
+  copyWpHtmlBtn: document.getElementById("copyWpHtmlBtn"),
+  clearOutputBtn: document.getElementById("clearOutputBtn"),
 
-function setStatus(message, type = "normal") {
-  statusText.textContent = message;
-  if (type === "success") statusText.style.color = "var(--success)";
-  else if (type === "warning") statusText.style.color = "var(--warning)";
-  else if (type === "accent") statusText.style.color = "var(--accent)";
-  else statusText.style.color = "var(--muted)";
+  imageInput: document.getElementById("imageInput"),
+  sourceImage: document.getElementById("sourceImage"),
+  cropBox: document.getElementById("cropBox"),
+  croppedPreview: document.getElementById("croppedPreview"),
+  imageMeta: document.getElementById("imageMeta"),
+  sceneNotes: document.getElementById("sceneNotes"),
+  altText: document.getElementById("altText"),
+  imgTitle: document.getElementById("imgTitle"),
+  caption: document.getElementById("caption"),
+  applyCropBtn: document.getElementById("applyCropBtn"),
+  exportUnder100Btn: document.getElementById("exportUnder100Btn"),
+  generateImageSeoBtn: document.getElementById("generateImageSeoBtn"),
+
+  toast: document.getElementById("toast")
+};
+
+function showToast(message) {
+  els.toast.textContent = message;
+  els.toast.classList.add("show");
+  clearTimeout(showToast._timer);
+  showToast._timer = setTimeout(() => {
+    els.toast.classList.remove("show");
+  }, 2200);
+}
+
+function renderPreview(data) {
+  const blocks = [];
+  if (data.h1) blocks.push(`<h1>${escapeHtml(data.h1)}</h1>`);
+  if (data.intro) blocks.push(`<p>${escapeHtml(data.intro)}</p>`);
+
+  (data.structure || []).forEach(sec => {
+    blocks.push(`<h2>${escapeHtml(sec.h2 || "")}</h2>`);
+    (sec.subsections || []).forEach(sub => {
+      if (sub.h3) blocks.push(`<h3>${escapeHtml(sub.h3)}</h3>`);
+      if (sub.h4) blocks.push(`<h4>${escapeHtml(sub.h4)}</h4>`);
+      if (sub.body) blocks.push(`<p>${escapeHtml(sub.body).replace(/\n\n/g, "<br><br>")}</p>`);
+    });
+  });
+
+  els.seoPreview.innerHTML = blocks.join("");
 }
 
 function escapeHtml(text) {
-  return String(text)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;");
+  const div = document.createElement("div");
+  div.textContent = text || "";
+  return div.innerHTML;
 }
 
-function renderOptionList(container, items, prefix) {
-  container.innerHTML = "";
-  items.forEach((item, index) => {
-    const btn = document.createElement("button");
-    btn.className = "option-item";
-    btn.textContent = `${prefix} ${index + 1}: ${item}`;
-    btn.addEventListener("click", async () => {
-      await copyText(item, `${prefix} ${index + 1} copied.`);
-    });
-    container.appendChild(btn);
-  });
-}
-
-function renderOutput(data) {
-  const mainSections = [
-    "H1 Tag",
-    "Introduction",
-    "H2 Tags",
-    "Main Content Body",
-    "Internal Link Placeholder",
-    "Conclusion & CTA"
-  ];
-
-  const seoSections = [
-    "Focus Keyphrase",
-    "SEO Title",
-    "Meta Description",
-    "Image Alt Text",
-    "Image Title",
-    "Slug (URL)",
-    "Short Summary (20-second video)",
-    "Video Script",
-    "Caption",
-    "Hashtags"
-  ];
-
-  let html = "";
-
-  mainSections.forEach((key) => {
-    html += `
-      <div class="output-section">
-        <div class="section-title">==================== ${escapeHtml(key.toUpperCase())} ====================</div>
-        <div class="section-content">${escapeHtml(data[key] || "")}</div>
-      </div>
-    `;
-  });
-
-  html += `
-    <div class="output-section">
-      <div class="section-title">==================== SEO TECHNICAL DETAILS ====================</div>
-    </div>
-  `;
-
-  seoSections.forEach((key) => {
-    html += `
-      <div class="output-section">
-        <div class="field-title">${escapeHtml(key)}:</div>
-        <div class="section-content">${escapeHtml(data[key] || "")}</div>
-      </div>
-    `;
-  });
-
-  outputContainer.innerHTML = html;
-  seoTitleLength.textContent = data.Counters?.seo_title_length || 0;
-  metaLength.textContent = data.Counters?.meta_length || 0;
-  seoScore.textContent = data["SEO Score"]?.score || 0;
-
-  const notes = data["SEO Score"]?.notes || [];
-  seoNotes.innerHTML = notes.map(note => `<div class="seo-note-item">• ${escapeHtml(note)}</div>`).join("");
-
-  renderOptionList(seoTitleOptions, data["SEO Title Options"] || [], "Title");
-  renderOptionList(metaOptions, data["Meta Description Options"] || [], "Meta");
-}
-
-function buildCopyAllText(data) {
-  const titleOptions = (data["SEO Title Options"] || []).map(x => `- ${x}`).join("\n");
-  const metaOptionsText = (data["Meta Description Options"] || []).map(x => `- ${x}`).join("\n");
-
-  return `
-==================== H1 TAG ====================
-${data["H1 Tag"] || ""}
-
-==================== INTRODUCTION ====================
-${data["Introduction"] || ""}
-
-==================== H2 TAGS ====================
-${data["H2 Tags"] || ""}
-
-==================== MAIN CONTENT BODY ====================
-${data["Main Content Body"] || ""}
-
-==================== INTERNAL LINK PLACEHOLDER ====================
-${data["Internal Link Placeholder"] || ""}
-
-==================== CONCLUSION & CTA ====================
-${data["Conclusion & CTA"] || ""}
-
-==================== SEO TECHNICAL DETAILS ====================
-
-Focus Keyphrase:
-${data["Focus Keyphrase"] || ""}
-
-SEO Title:
-${data["SEO Title"] || ""}
-
-SEO Title Options:
-${titleOptions}
-
-Meta Description:
-${data["Meta Description"] || ""}
-
-Meta Description Options:
-${metaOptionsText}
-
-Image Alt Text:
-${data["Image Alt Text"] || ""}
-
-Image Title:
-${data["Image Title"] || ""}
-
-Slug (URL):
-${data["Slug (URL)"] || ""}
-
-Short Summary (20-second video):
-${data["Short Summary (20-second video)"] || ""}
-
-Video Script:
-${data["Video Script"] || ""}
-
-Caption:
-${data["Caption"] || ""}
-
-Hashtags:
-${data["Hashtags"] || ""}
-
-SEO Score:
-${data["SEO Score"]?.score || 0}
-  `.trim();
-}
-
-async function copyText(text, successMessage) {
-  try {
-    await navigator.clipboard.writeText(text);
-    setStatus(successMessage, "success");
-  } catch {
-    setStatus("Copy failed.", "warning");
-  }
-}
-
-async function exportFile(url, filename) {
-  if (!Object.keys(currentResult).length) {
-    setStatus("No output to export.", "warning");
-    return;
-  }
-
-  try {
-    const response = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(currentResult)
-    });
-
-    if (!response.ok) {
-      setStatus("Export failed.", "warning");
-      return;
-    }
-
-    const blob = await response.blob();
-    const link = document.createElement("a");
-    link.href = window.URL.createObjectURL(blob);
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-
-    setStatus(`${filename} downloaded.`, "success");
-  } catch {
-    setStatus("Export failed.", "warning");
-  }
-}
-
-formatBtn.addEventListener("click", async () => {
-  const article = articleInput.value.trim();
+async function generateArticle() {
+  const article = els.articleInput.value.trim();
   if (!article) {
-    setStatus("Please paste article content first.", "warning");
+    showToast("Please paste an article first");
     return;
   }
 
-  setStatus("Formatting SEO content...", "accent");
-
-  try {
-    const response = await fetch("/format", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ article })
-    });
-
-    const data = await response.json();
-
-    if (!response.ok) {
-      setStatus(data.error || "Something went wrong.", "warning");
-      return;
-    }
-
-    currentResult = data;
-    renderOutput(data);
-    setStatus("SEO content formatted successfully.", "success");
-  } catch {
-    setStatus("Server error. Please try again.", "warning");
-  }
-});
-
-clearInputBtn.addEventListener("click", () => {
-  articleInput.value = "";
-  setStatus("Input cleared.", "accent");
-});
-
-clearOutputBtn.addEventListener("click", () => {
-  currentResult = {};
-  outputContainer.innerHTML = `<div class="empty-state">Formatted SEO output will appear here.</div>`;
-  seoTitleLength.textContent = "0";
-  metaLength.textContent = "0";
-  seoScore.textContent = "0";
-  seoNotes.innerHTML = "";
-  seoTitleOptions.innerHTML = "";
-  metaOptions.innerHTML = "";
-  setStatus("Output cleared.", "accent");
-});
-
-copyAllBtn.addEventListener("click", async () => {
-  if (!Object.keys(currentResult).length) {
-    setStatus("No output to copy.", "warning");
-    return;
-  }
-  await copyText(buildCopyAllText(currentResult), "All output copied.");
-});
-
-copyButtons.forEach((btn) => {
-  btn.addEventListener("click", async () => {
-    const section = btn.dataset.section;
-    const value = currentResult[section];
-    if (!value) {
-      setStatus(`No content for ${section}.`, "warning");
-      return;
-    }
-    await copyText(value, `${section} copied.`);
-  });
-});
-
-exportTxtBtn.addEventListener("click", async () => {
-  await exportFile("/export/txt", "seo_output.txt");
-});
-
-exportDocxBtn.addEventListener("click", async () => {
-  await exportFile("/export/docx", "seo_output.docx");
-});
-
-themeToggle.addEventListener("click", () => {
-  document.body.classList.toggle("light-theme");
-  const isLight = document.body.classList.contains("light-theme");
-  setStatus(`Theme changed to ${isLight ? "light" : "dark"}.`, "accent");
-});
-
-/* IMAGE EDITOR */
-const ctx = imageCanvas.getContext("2d");
-let loadedImage = null;
-let originalImageDataUrl = null;
-
-let imageState = {
-  rotation: 0,
-  flipX: 1,
-  flipY: 1,
-  grayscale: false,
-  brightness: 100,
-  contrast: 100,
-  overlayText: "",
-  overlayFontSize: 42,
-  overlayColor: "#ffffff",
-  overlayX: 50,
-  overlayY: 85,
-  watermarkText: "",
-  watermarkSize: 22,
-  watermarkOpacity: 35,
-  cropMode: false,
-  cropRect: { x: 80, y: 80, w: 260, h: 180 }
-};
-
-let dragMode = null;
-let dragOffset = { x: 0, y: 0 };
-
-function clamp(value, min, max) {
-  return Math.max(min, Math.min(max, value));
-}
-
-function resetImageState() {
-  imageState = {
-    rotation: 0,
-    flipX: 1,
-    flipY: 1,
-    grayscale: false,
-    brightness: 100,
-    contrast: 100,
-    overlayText: "",
-    overlayFontSize: 42,
-    overlayColor: "#ffffff",
-    overlayX: 50,
-    overlayY: 85,
-    watermarkText: "",
-    watermarkSize: 22,
-    watermarkOpacity: 35,
-    cropMode: false,
-    cropRect: { x: 80, y: 80, w: 260, h: 180 }
-  };
-
-  brightnessRange.value = 100;
-  contrastRange.value = 100;
-  overlayTextInput.value = "";
-  overlayFontSizeRange.value = 42;
-  overlayColorInput.value = "#ffffff";
-  overlayXRange.value = 50;
-  overlayYRange.value = 85;
-  watermarkInput.value = "";
-  watermarkSizeRange.value = 22;
-  watermarkOpacityRange.value = 35;
-}
-
-function drawCropOverlay() {
-  const { x, y, w, h } = imageState.cropRect;
-
-  ctx.save();
-  ctx.fillStyle = "rgba(0,0,0,0.35)";
-  ctx.fillRect(0, 0, imageCanvas.width, imageCanvas.height);
-  ctx.clearRect(x, y, w, h);
-  ctx.strokeStyle = "#5da9ff";
-  ctx.lineWidth = 2;
-  ctx.strokeRect(x, y, w, h);
-
-  const handles = [
-    [x, y], [x + w, y], [x, y + h], [x + w, y + h]
-  ];
-
-  ctx.fillStyle = "#ffffff";
-  handles.forEach(([hx, hy]) => {
-    ctx.fillRect(hx - 6, hy - 6, 12, 12);
+  const res = await fetch("/api/process", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ article })
   });
 
-  ctx.restore();
-}
-
-function drawTextOverlay() {
-  if (!imageState.overlayText) return;
-
-  ctx.save();
-  ctx.font = `bold ${imageState.overlayFontSize}px Segoe UI, Arial`;
-  ctx.fillStyle = imageState.overlayColor;
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.lineWidth = 4;
-  ctx.strokeStyle = "rgba(0,0,0,0.45)";
-  const x = (imageState.overlayX / 100) * imageCanvas.width;
-  const y = (imageState.overlayY / 100) * imageCanvas.height;
-  ctx.strokeText(imageState.overlayText, x, y);
-  ctx.fillText(imageState.overlayText, x, y);
-  ctx.restore();
-}
-
-function drawWatermark() {
-  if (!imageState.watermarkText) return;
-
-  ctx.save();
-  ctx.globalAlpha = imageState.watermarkOpacity / 100;
-  ctx.font = `${imageState.watermarkSize}px Segoe UI, Arial`;
-  ctx.fillStyle = "#ffffff";
-  ctx.textAlign = "right";
-  ctx.textBaseline = "bottom";
-  ctx.fillText(imageState.watermarkText, imageCanvas.width - 20, imageCanvas.height - 20);
-  ctx.restore();
-}
-
-function drawImageToCanvas() {
-  if (!loadedImage) return;
-
-  const radians = (imageState.rotation * Math.PI) / 180;
-  const rotated = imageState.rotation % 180 !== 0;
-
-  const w = loadedImage.width;
-  const h = loadedImage.height;
-  const canvasW = rotated ? h : w;
-  const canvasH = rotated ? w : h;
-
-  imageCanvas.width = canvasW;
-  imageCanvas.height = canvasH;
-
-  ctx.save();
-  ctx.clearRect(0, 0, imageCanvas.width, imageCanvas.height);
-  ctx.filter = `brightness(${imageState.brightness}%) contrast(${imageState.contrast}%) grayscale(${imageState.grayscale ? 100 : 0}%)`;
-
-  ctx.translate(imageCanvas.width / 2, imageCanvas.height / 2);
-  ctx.rotate(radians);
-  ctx.scale(imageState.flipX, imageState.flipY);
-  ctx.drawImage(loadedImage, -w / 2, -h / 2, w, h);
-  ctx.restore();
-
-  drawTextOverlay();
-  drawWatermark();
-
-  if (imageState.cropMode) {
-    drawCropOverlay();
-  }
-}
-
-function getCanvasImageData() {
-  return imageCanvas.toDataURL("image/png");
-}
-
-function loadImageFromDataUrl(dataUrl, successMessage = "Image updated.") {
-  const img = new Image();
-  img.onload = () => {
-    loadedImage = img;
-    imageState.rotation = 0;
-    imageState.flipX = 1;
-    imageState.flipY = 1;
-    imageState.grayscale = false;
-    imageState.brightness = 100;
-    imageState.contrast = 100;
-    imageState.cropMode = false;
-    drawImageToCanvas();
-    setStatus(successMessage, "success");
-  };
-  img.src = dataUrl;
-}
-
-function applyPreset(width, height) {
-  if (!loadedImage) {
-    setStatus("Upload image first.", "warning");
+  const data = await res.json();
+  if (!data.ok) {
+    showToast(data.error || "Failed");
     return;
   }
 
-  const tempCanvas = document.createElement("canvas");
-  const tempCtx = tempCanvas.getContext("2d");
-  tempCanvas.width = width;
-  tempCanvas.height = height;
+  state.processed = data;
+  renderPreview(data);
 
-  tempCtx.imageSmoothingEnabled = true;
-  tempCtx.imageSmoothingQuality = "high";
+  els.focusKeyphrase.value = data.focus_keyphrase || "";
+  els.seoTitle.value = data.seo_title || "";
+  els.metaDescription.value = data.meta_description || "";
+  els.slug.value = data.slug || "";
+  els.shortSummary.value = data.short_summary || "";
+  els.wpHtmlOutput.value = data.wp_html || "";
 
-  const srcRatio = imageCanvas.width / imageCanvas.height;
-  const destRatio = width / height;
-
-  let drawW, drawH, offsetX, offsetY;
-  if (srcRatio > destRatio) {
-    drawH = height;
-    drawW = drawH * srcRatio;
-    offsetX = (width - drawW) / 2;
-    offsetY = 0;
-  } else {
-    drawW = width;
-    drawH = drawW / srcRatio;
-    offsetX = 0;
-    offsetY = (height - drawH) / 2;
-  }
-
-  tempCtx.drawImage(imageCanvas, offsetX, offsetY, drawW, drawH);
-
-  const dataUrl = tempCanvas.toDataURL("image/png");
-  const img = new Image();
-  img.onload = () => {
-    loadedImage = img;
-    originalImageDataUrl = dataUrl;
-    resetImageState();
-    drawImageToCanvas();
-    setStatus(`Preset applied: ${width}x${height}`, "success");
-  };
-  img.src = dataUrl;
+  showToast("SEO output generated");
 }
 
-function getMousePos(evt) {
-  const rect = imageCanvas.getBoundingClientRect();
-  const scaleX = imageCanvas.width / rect.width;
-  const scaleY = imageCanvas.height / rect.height;
-
-  return {
-    x: (evt.clientX - rect.left) * scaleX,
-    y: (evt.clientY - rect.top) * scaleY
-  };
+function clearInput() {
+  els.articleInput.value = "";
 }
 
-function getCropHandle(pos) {
-  const { x, y, w, h } = imageState.cropRect;
-  const handles = {
-    tl: { x, y },
-    tr: { x: x + w, y },
-    bl: { x, y: y + h },
-    br: { x: x + w, y: y + h }
-  };
-
-  for (const key in handles) {
-    const hx = handles[key].x;
-    const hy = handles[key].y;
-    if (Math.abs(pos.x - hx) <= 12 && Math.abs(pos.y - hy) <= 12) {
-      return key;
-    }
-  }
-
-  if (pos.x >= x && pos.x <= x + w && pos.y >= y && pos.y <= y + h) {
-    return "move";
-  }
-
-  return null;
+function clearOutput() {
+  els.seoPreview.innerHTML = `<p class="muted">Formatted SEO output will appear here.</p>`;
+  els.focusKeyphrase.value = "";
+  els.seoTitle.value = "";
+  els.metaDescription.value = "";
+  els.slug.value = "";
+  els.shortSummary.value = "";
+  els.wpHtmlOutput.value = "";
+  state.processed = null;
 }
 
-imageCanvas.addEventListener("mousedown", (evt) => {
-  if (!loadedImage || !imageState.cropMode) return;
-  const pos = getMousePos(evt);
-  const handle = getCropHandle(pos);
-  if (!handle) return;
+async function copyWpHtml() {
+  const text = els.wpHtmlOutput.value.trim();
+  if (!text) {
+    showToast("Nothing to copy");
+    return;
+  }
+  await navigator.clipboard.writeText(text);
+  showToast("WP HTML copied");
+}
 
-  dragMode = handle;
-  dragOffset = pos;
-});
+async function copyField(targetId) {
+  const el = document.getElementById(targetId);
+  if (!el || !el.value) {
+    showToast("Nothing to copy");
+    return;
+  }
+  await navigator.clipboard.writeText(el.value);
+  showToast("Copied");
+}
 
-imageCanvas.addEventListener("mousemove", (evt) => {
-  if (!loadedImage || !imageState.cropMode || !dragMode) return;
-
-  const pos = getMousePos(evt);
-  const dx = pos.x - dragOffset.x;
-  const dy = pos.y - dragOffset.y;
-  const rect = imageState.cropRect;
-  const minSize = 40;
-
-  if (dragMode === "move") {
-    rect.x = clamp(rect.x + dx, 0, imageCanvas.width - rect.w);
-    rect.y = clamp(rect.y + dy, 0, imageCanvas.height - rect.h);
-  } else if (dragMode === "tl") {
-    const newX = clamp(rect.x + dx, 0, rect.x + rect.w - minSize);
-    const newY = clamp(rect.y + dy, 0, rect.y + rect.h - minSize);
-    rect.w = rect.w + (rect.x - newX);
-    rect.h = rect.h + (rect.y - newY);
-    rect.x = newX;
-    rect.y = newY;
-  } else if (dragMode === "tr") {
-    const newY = clamp(rect.y + dy, 0, rect.y + rect.h - minSize);
-    const newW = clamp(rect.w + dx, minSize, imageCanvas.width - rect.x);
-    rect.h = rect.h + (rect.y - newY);
-    rect.y = newY;
-    rect.w = newW;
-  } else if (dragMode === "bl") {
-    const newX = clamp(rect.x + dx, 0, rect.x + rect.w - minSize);
-    const newH = clamp(rect.h + dy, minSize, imageCanvas.height - rect.y);
-    rect.w = rect.w + (rect.x - newX);
-    rect.x = newX;
-    rect.h = newH;
-  } else if (dragMode === "br") {
-    rect.w = clamp(rect.w + dx, minSize, imageCanvas.width - rect.x);
-    rect.h = clamp(rect.h + dy, minSize, imageCanvas.height - rect.y);
+async function exportTxt() {
+  const text = state.processed?.plain_text || "";
+  if (!text) {
+    showToast("Nothing to export");
+    return;
   }
 
-  dragOffset = pos;
-  drawImageToCanvas();
-});
+  const res = await fetch("/api/export-txt", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text })
+  });
 
-window.addEventListener("mouseup", () => {
-  dragMode = null;
-});
+  const blob = await res.blob();
+  downloadBlob(blob, "seo-output.txt");
+}
 
-imageUpload.addEventListener("change", (event) => {
-  const file = event.target.files[0];
-  if (!file) return;
+async function exportHtml() {
+  if (!state.processed) {
+    showToast("Nothing to export");
+    return;
+  }
 
+  const payload = {
+    h1: state.processed.h1 || "",
+    wp_html: els.wpHtmlOutput.value || ""
+  };
+
+  const res = await fetch("/api/export-html", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+
+  const blob = await res.blob();
+  downloadBlob(blob, "seo-output.html");
+}
+
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function loadImage(file) {
+  state.uploadedFile = file;
   const reader = new FileReader();
   reader.onload = () => {
-    originalImageDataUrl = reader.result;
+    els.sourceImage.src = reader.result;
+    els.sourceImage.style.display = "block";
 
-    const img = new Image();
-    img.onload = () => {
-      loadedImage = img;
-      resetImageState();
-      imageState.cropRect = {
-        x: img.width * 0.15,
-        y: img.height * 0.15,
-        w: img.width * 0.7,
-        h: img.height * 0.7
-      };
-      drawImageToCanvas();
-      setStatus("Image uploaded successfully.", "success");
+    els.sourceImage.onload = () => {
+      initCropBox();
     };
-    img.src = reader.result;
   };
   reader.readAsDataURL(file);
-});
+}
 
-rotateLeftBtn.addEventListener("click", () => {
-  if (!loadedImage) return setStatus("Upload image first.", "warning");
-  imageState.rotation = (imageState.rotation - 90 + 360) % 360;
-  drawImageToCanvas();
-});
+function initCropBox() {
+  const img = els.sourceImage;
+  const box = els.cropBox;
+  const wrap = img.parentElement.getBoundingClientRect();
+  const imgRect = img.getBoundingClientRect();
 
-rotateRightBtn.addEventListener("click", () => {
-  if (!loadedImage) return setStatus("Upload image first.", "warning");
-  imageState.rotation = (imageState.rotation + 90) % 360;
-  drawImageToCanvas();
-});
+  const initialWidth = Math.min(imgRect.width * 0.7, 320);
+  const ratio = state.selectedPreset.width / state.selectedPreset.height;
+  const initialHeight = initialWidth / ratio;
 
-flipXBtn.addEventListener("click", () => {
-  if (!loadedImage) return setStatus("Upload image first.", "warning");
-  imageState.flipX *= -1;
-  drawImageToCanvas();
-});
+  const left = imgRect.left - wrap.left + (imgRect.width - initialWidth) / 2;
+  const top = imgRect.top - wrap.top + (imgRect.height - initialHeight) / 2;
 
-flipYBtn.addEventListener("click", () => {
-  if (!loadedImage) return setStatus("Upload image first.", "warning");
-  imageState.flipY *= -1;
-  drawImageToCanvas();
-});
-
-grayscaleBtn.addEventListener("click", () => {
-  if (!loadedImage) return setStatus("Upload image first.", "warning");
-  imageState.grayscale = !imageState.grayscale;
-  drawImageToCanvas();
-});
-
-brightnessRange.addEventListener("input", () => {
-  if (!loadedImage) return;
-  imageState.brightness = Number(brightnessRange.value);
-  drawImageToCanvas();
-});
-
-contrastRange.addEventListener("input", () => {
-  if (!loadedImage) return;
-  imageState.contrast = Number(contrastRange.value);
-  drawImageToCanvas();
-});
-
-resetImageBtn.addEventListener("click", () => {
-  if (!loadedImage) return setStatus("Upload image first.", "warning");
-  resetImageState();
-  drawImageToCanvas();
-  setStatus("Image reset.", "accent");
-});
-
-toggleCropBtn.addEventListener("click", () => {
-  if (!loadedImage) return setStatus("Upload image first.", "warning");
-  imageState.cropMode = !imageState.cropMode;
-  drawImageToCanvas();
-  setStatus(`Crop mode ${imageState.cropMode ? "enabled" : "disabled"}.`, "accent");
-});
-
-applyCropBtn.addEventListener("click", () => {
-  if (!loadedImage) return setStatus("Upload image first.", "warning");
-
-  const { x, y, w, h } = imageState.cropRect;
-  const tempCanvas = document.createElement("canvas");
-  const tempCtx = tempCanvas.getContext("2d");
-  tempCanvas.width = Math.round(w);
-  tempCanvas.height = Math.round(h);
-  tempCtx.drawImage(imageCanvas, x, y, w, h, 0, 0, tempCanvas.width, tempCanvas.height);
-
-  const dataUrl = tempCanvas.toDataURL("image/png");
-  originalImageDataUrl = dataUrl;
-
-  const img = new Image();
-  img.onload = () => {
-    loadedImage = img;
-    imageState.cropMode = false;
-    imageState.cropRect = { x: 40, y: 40, w: img.width * 0.7, h: img.height * 0.7 };
-    drawImageToCanvas();
-    setStatus("Crop applied.", "success");
+  state.crop = {
+    x: left,
+    y: top,
+    width: initialWidth,
+    height: initialHeight
   };
-  img.src = dataUrl;
-});
 
-applyTextBtn.addEventListener("click", () => {
-  if (!loadedImage) return setStatus("Upload image first.", "warning");
-  imageState.overlayText = overlayTextInput.value.trim();
-  imageState.overlayFontSize = Number(overlayFontSizeRange.value);
-  imageState.overlayColor = overlayColorInput.value;
-  imageState.overlayX = Number(overlayXRange.value);
-  imageState.overlayY = Number(overlayYRange.value);
-  drawImageToCanvas();
-  setStatus("Text overlay applied.", "success");
-});
+  updateCropBox();
+}
 
-clearTextBtn.addEventListener("click", () => {
-  imageState.overlayText = "";
-  overlayTextInput.value = "";
-  drawImageToCanvas();
-  setStatus("Text overlay cleared.", "accent");
-});
+function updateCropBox() {
+  const box = els.cropBox;
+  box.style.display = "block";
+  box.style.left = `${state.crop.x}px`;
+  box.style.top = `${state.crop.y}px`;
+  box.style.width = `${state.crop.width}px`;
+  box.style.height = `${state.crop.height}px`;
+}
 
-applyWatermarkBtn.addEventListener("click", () => {
-  if (!loadedImage) return setStatus("Upload image first.", "warning");
-  imageState.watermarkText = watermarkInput.value.trim();
-  imageState.watermarkSize = Number(watermarkSizeRange.value);
-  imageState.watermarkOpacity = Number(watermarkOpacityRange.value);
-  drawImageToCanvas();
-  setStatus("Watermark applied.", "success");
-});
+function setPreset(w, h) {
+  state.selectedPreset = { width: Number(w), height: Number(h) };
+  if (els.sourceImage.src) {
+    initCropBox();
+  }
+  showToast(`Preset ${w}x${h} ready`);
+}
 
-clearWatermarkBtn.addEventListener("click", () => {
-  imageState.watermarkText = "";
-  watermarkInput.value = "";
-  drawImageToCanvas();
-  setStatus("Watermark cleared.", "accent");
-});
+function attachCropEvents() {
+  els.cropBox.addEventListener("mousedown", (e) => {
+    state.dragging = true;
+    const rect = els.cropBox.getBoundingClientRect();
+    state.dragOffsetX = e.clientX - rect.left;
+    state.dragOffsetY = e.clientY - rect.top;
+  });
 
-presetYoutubeBtn.addEventListener("click", () => applyPreset(1280, 720));
-presetFacebookBtn.addEventListener("click", () => applyPreset(1200, 630));
-presetTikTokBtn.addEventListener("click", () => applyPreset(1080, 1920));
-presetSquareBtn.addEventListener("click", () => applyPreset(1080, 1080));
+  window.addEventListener("mousemove", (e) => {
+    if (!state.dragging) return;
 
-upscaleSmoothBtn.addEventListener("click", async () => {
-  if (!loadedImage || !originalImageDataUrl) {
-    setStatus("Upload image first.", "warning");
+    const wrapRect = els.sourceImage.parentElement.getBoundingClientRect();
+    const imgRect = els.sourceImage.getBoundingClientRect();
+
+    let x = e.clientX - wrapRect.left - state.dragOffsetX;
+    let y = e.clientY - wrapRect.top - state.dragOffsetY;
+
+    const minX = imgRect.left - wrapRect.left;
+    const minY = imgRect.top - wrapRect.top;
+    const maxX = minX + imgRect.width - state.crop.width;
+    const maxY = minY + imgRect.height - state.crop.height;
+
+    x = Math.max(minX, Math.min(x, maxX));
+    y = Math.max(minY, Math.min(y, maxY));
+
+    state.crop.x = x;
+    state.crop.y = y;
+    updateCropBox();
+  });
+
+  window.addEventListener("mouseup", () => {
+    state.dragging = false;
+  });
+}
+
+function getRealCropValues() {
+  const imgRect = els.sourceImage.getBoundingClientRect();
+  const wrapRect = els.sourceImage.parentElement.getBoundingClientRect();
+
+  const displayX = state.crop.x - (imgRect.left - wrapRect.left);
+  const displayY = state.crop.y - (imgRect.top - wrapRect.top);
+
+  const scaleX = els.sourceImage.naturalWidth / imgRect.width;
+  const scaleY = els.sourceImage.naturalHeight / imgRect.height;
+
+  return {
+    x: Math.round(displayX * scaleX),
+    y: Math.round(displayY * scaleY),
+    width: Math.round(state.crop.width * scaleX),
+    height: Math.round(state.crop.height * scaleY)
+  };
+}
+
+async function cropImage(exportUnder100kb = false) {
+  if (!state.uploadedFile) {
+    showToast("Please open an image first");
     return;
   }
 
-  try {
-    setStatus("Running UpscaleAI Smooth...", "accent");
+  const real = getRealCropValues();
+  const form = new FormData();
+  form.append("image", state.uploadedFile);
+  form.append("x", real.x);
+  form.append("y", real.y);
+  form.append("width", real.width);
+  form.append("height", real.height);
+  form.append("target_width", state.selectedPreset.width);
+  form.append("target_height", state.selectedPreset.height);
+  form.append("export_under_100kb", exportUnder100kb ? "true" : "false");
 
-    const sourceImage =
-      imageState.overlayText ||
-      imageState.watermarkText ||
-      imageState.cropMode
-        ? getCanvasImageData()
-        : originalImageDataUrl;
+  const res = await fetch("/api/crop-image", {
+    method: "POST",
+    body: form
+  });
 
-    const response = await fetch("/image/upscale-smooth", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        image: sourceImage,
-        scale: Number(upscaleScaleSelect.value),
-        clean_mode: upscaleCleanModeSelect.value,
-        output_format: upscaleFormatSelect.value
-      })
-    });
-
-    const data = await response.json();
-
-    if (!response.ok) {
-      setStatus(data.error || "Upscale failed.", "warning");
-      return;
-    }
-
-    originalImageDataUrl = data.image;
-    loadImageFromDataUrl(
-      data.image,
-      `UpscaleAI Smooth done: ${data.scale}x ${data.clean_mode}`
-    );
-  } catch {
-    setStatus("Upscale request failed.", "warning");
+  const data = await res.json();
+  if (!data.ok) {
+    showToast(data.error || "Crop failed");
+    return null;
   }
+
+  state.latestImageDataUri = data.image_data_uri;
+  els.croppedPreview.src = data.image_data_uri;
+  els.imageMeta.textContent = exportUnder100kb
+    ? `Preview size: ${data.width} x ${data.height} • ${data.size_kb}KB`
+    : `Preview size: ${data.width} x ${data.height}`;
+
+  showToast(exportUnder100kb ? "Exported preview under 100KB" : "Crop applied");
+  updateWpHtmlWithImage();
+  return data;
+}
+
+function updateWpHtmlWithImage() {
+  if (!state.processed) return;
+
+  const h1 = state.processed.h1 || "";
+  const intro = state.processed.intro || "";
+  const structure = state.processed.structure || [];
+  const altText = els.altText.value || h1 || "Featured image";
+  const imgTitle = els.imgTitle.value || h1 || "Featured image";
+  const caption = els.caption.value || "";
+
+  let htmlParts = [];
+
+  if (state.latestImageDataUri) {
+    let fig = `<figure class="wp-block-image size-full featured-image-wrap">`;
+    fig += `<img src="${state.latestImageDataUri}" alt="${escapeHtml(altText)}" title="${escapeHtml(imgTitle)}" />`;
+    if (caption) fig += `<figcaption>${escapeHtml(caption)}</figcaption>`;
+    fig += `</figure>`;
+    htmlParts.push(fig);
+  }
+
+  if (h1) htmlParts.push(`<h1>${escapeHtml(h1)}</h1>`);
+  if (intro) htmlParts.push(`<p>${escapeHtml(intro)}</p>`);
+
+  structure.forEach(sec => {
+    if (sec.h2) htmlParts.push(`<h2>${escapeHtml(sec.h2)}</h2>`);
+    (sec.subsections || []).forEach(sub => {
+      if (sub.h3) htmlParts.push(`<h3>${escapeHtml(sub.h3)}</h3>`);
+      if (sub.h4) htmlParts.push(`<h4>${escapeHtml(sub.h4)}</h4>`);
+      if (sub.body) {
+        const paragraphs = sub.body.split("\n\n").filter(Boolean);
+        paragraphs.forEach(p => htmlParts.push(`<p>${escapeHtml(p)}</p>`));
+      }
+    });
+  });
+
+  els.wpHtmlOutput.value = htmlParts.join("\n");
+}
+
+async function generateImageSeo() {
+  const payload = {
+    h1: state.processed?.h1 || "",
+    intro: state.processed?.intro || "",
+    focus_keyphrase: els.focusKeyphrase.value || "",
+    scene_notes: els.sceneNotes.value || ""
+  };
+
+  const res = await fetch("/api/image-seo", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+
+  const data = await res.json();
+  if (!data.ok) {
+    showToast("Image SEO failed");
+    return;
+  }
+
+  els.altText.value = data.alt_text || "";
+  els.imgTitle.value = data.img_title || "";
+  els.caption.value = data.caption || "";
+  updateWpHtmlWithImage();
+  showToast("Generated image SEO");
+}
+
+els.generateBtn.addEventListener("click", generateArticle);
+els.clearInputBtn.addEventListener("click", clearInput);
+els.clearOutputBtn.addEventListener("click", clearOutput);
+els.copyWpHtmlBtn.addEventListener("click", copyWpHtml);
+els.exportTxtBtn.addEventListener("click", exportTxt);
+els.exportHtmlBtn.addEventListener("click", exportHtml);
+
+document.querySelectorAll("[data-copy-target]").forEach(btn => {
+  btn.addEventListener("click", () => copyField(btn.dataset.copyTarget));
 });
 
-downloadImageBtn.addEventListener("click", () => {
-  if (!loadedImage) return setStatus("Upload image first.", "warning");
-  const link = document.createElement("a");
-  link.download = "edited-image.png";
-  link.href = imageCanvas.toDataURL("image/png");
-  link.click();
-  setStatus("Edited image downloaded.", "success");
+els.imageInput.addEventListener("change", (e) => {
+  const file = e.target.files?.[0];
+  if (file) loadImage(file);
 });
+
+document.querySelectorAll(".preset-btn").forEach(btn => {
+  btn.addEventListener("click", () => setPreset(btn.dataset.width, btn.dataset.height));
+});
+
+els.applyCropBtn.addEventListener("click", () => cropImage(false));
+els.exportUnder100Btn.addEventListener("click", () => cropImage(true));
+els.generateImageSeoBtn.addEventListener("click", generateImageSeo);
+
+["input", "change"].forEach(evt => {
+  els.altText.addEventListener(evt, updateWpHtmlWithImage);
+  els.imgTitle.addEventListener(evt, updateWpHtmlWithImage);
+  els.caption.addEventListener(evt, updateWpHtmlWithImage);
+  els.seoTitle.addEventListener(evt, () => {});
+  els.metaDescription.addEventListener(evt, () => {});
+  els.slug.addEventListener(evt, () => {});
+});
+
+attachCropEvents();
