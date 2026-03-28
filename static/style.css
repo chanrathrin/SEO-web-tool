@@ -97,7 +97,8 @@ body {
 .section-title,
 .panel-title,
 .sub-title,
-.inner-title {
+.inner-title,
+.quick-group-title {
   font-weight: 800;
 }
 
@@ -116,6 +117,60 @@ body {
 .inner-title {
   font-size: 16px;
   margin-bottom: 10px;
+}
+
+.quick-row {
+  display: grid;
+  grid-template-columns: 1.15fr 0.85fr;
+  gap: 16px;
+  margin-top: 14px;
+}
+
+.quick-row + .quick-row {
+  margin-top: 16px;
+}
+
+.quick-group {
+  border-radius: 22px;
+  padding: 14px;
+  border: 1px solid var(--border);
+}
+
+.quick-group-title {
+  font-size: 14px;
+  margin-bottom: 12px;
+  letter-spacing: 0.02em;
+}
+
+.quick-group-main {
+  background: linear-gradient(180deg, rgba(37, 99, 235, 0.08), rgba(37, 99, 235, 0.03));
+  border-color: rgba(59, 130, 246, 0.25);
+}
+
+.quick-group-main .quick-group-title {
+  color: #bfdbfe;
+}
+
+.quick-group-seo {
+  background: linear-gradient(180deg, rgba(99, 102, 241, 0.09), rgba(139, 92, 246, 0.04));
+  border-color: rgba(139, 92, 246, 0.24);
+}
+
+.quick-group-seo .quick-group-title {
+  color: #ddd6fe;
+}
+
+.quick-group-image {
+  background: linear-gradient(180deg, rgba(5, 150, 105, 0.08), rgba(225, 29, 72, 0.03));
+  border-color: rgba(16, 185, 129, 0.22);
+}
+
+.quick-group-image .quick-group-title {
+  color: #bbf7d0;
+}
+
+.quick-toolbar {
+  margin-bottom: 0;
 }
 
 .main-grid,
@@ -438,7 +493,8 @@ textarea {
   .secondary-grid,
   .copy-grid,
   .field-grid,
-  .crop-grid {
+  .crop-grid,
+  .quick-row {
     grid-template-columns: 1fr;
   }
 
