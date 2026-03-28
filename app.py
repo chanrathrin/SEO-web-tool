@@ -14,9 +14,6 @@ app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 25 * 1024 * 1024
 
 
-# =========================
-# GENERAL HELPERS
-# =========================
 def normalize_newlines(text: str) -> str:
     return (text or "").replace("\r\n", "\n").replace("\r", "\n")
 
@@ -57,18 +54,6 @@ def esc(text: str) -> str:
     return html.escape(text or "", quote=True)
 
 
-def make_slug(title: str) -> str:
-    slug = re.sub(r"[^a-z0-9\s-]", "", (title or "").lower())
-    slug = re.sub(r"\s+", "-", slug).strip("-")
-    slug = re.sub(r"-{2,}", "-", slug)
-    return slug or "news-update"
-
-
-def trim_words(text: str, max_words: int) -> str:
-    words = [w for w in (text or "").split() if w]
-    return " ".join(words[:max_words]).strip()
-
-
 def get_paragraphs(lines):
     paragraphs = []
     current = []
@@ -84,9 +69,6 @@ def get_paragraphs(lines):
     return [p for p in paragraphs if p]
 
 
-# =========================
-# ARTICLE / SEO LOGIC
-# =========================
 def strip_internal_seo_lines(lines):
     prefixes = (
         "Focus Keyphrase:",
@@ -264,6 +246,13 @@ def build_nested_article_structure(sections):
     return structure[:3]
 
 
+def make_slug(title: str) -> str:
+    slug = re.sub(r"[^a-z0-9\s-]", "", (title or "").lower())
+    slug = re.sub(r"\s+", "-", slug).strip("-")
+    slug = re.sub(r"-{2,}", "-", slug)
+    return slug or "news-update"
+
+
 def make_focus_keyphrase(title: str) -> str:
     cleaned = re.sub(r"[^\w\s-]", "", title or "").strip()
     return " ".join(cleaned.split()[:10]).strip()
@@ -339,10 +328,11 @@ def build_wordpress_html_fragment(h1, intro, structure, image_data_uri="", alt_t
     if h1:
         parts.append(f"<h1>{esc(h1)}</h1>")
     if intro:
-        parts.append(f"<p>{esc(intro)}</p>")
+        parts.append(f'<div class="intro-card"><p class="intro">{esc(intro)}</p></div>')
 
     for sec in structure:
         if sec.get("h2"):
+            parts.append('<section class="story-section">')
             parts.append(f"<h2>{esc(sec['h2'])}</h2>")
         for sub in sec.get("subsections", []):
             if sub.get("h3"):
@@ -351,6 +341,8 @@ def build_wordpress_html_fragment(h1, intro, structure, image_data_uri="", alt_t
                 parts.append(f"<h4>{esc(sub['h4'])}</h4>")
             for p in [x.strip() for x in sub.get("body", "").split("\n\n") if x.strip()]:
                 parts.append(f"<p>{esc(p).replace(chr(10), '<br>')}</p>")
+        if sec.get("h2"):
+            parts.append("</section>")
 
     return "\n".join(parts).strip()
 
@@ -369,6 +361,7 @@ def build_html_document(h1, wp_html):
     --text: #1f2937;
     --muted: #4b5563;
     --border: #dbe4f0;
+    --accent: #2563eb;
 }}
 * {{ box-sizing: border-box; }}
 body {{
@@ -389,18 +382,74 @@ body {{
     box-shadow: 0 18px 50px rgba(15, 23, 42, 0.08);
     padding: 28px 28px 34px;
 }}
-h1 {{ font-size: 44px; line-height: 1.15; margin: 0 0 18px; color: #162033; }}
-h2 {{ font-size: 31px; margin: 28px 0 14px; color: #22304a; }}
-h3 {{ font-size: 23px; margin: 20px 0 10px; color: #22304a; }}
-p {{ font-size: 18px; color: #243041; margin: 0 0 16px; }}
-img {{ max-width: 100%; height: auto; border-radius: 16px; }}
-figcaption {{ color: #6b7280; font-size: 14px; margin-top: 8px; }}
+.featured-image-wrap img {{
+    display: block;
+    width: 100%;
+    border-radius: 18px;
+}}
+.featured-caption, figcaption {{
+    font-size: 14px;
+    color: var(--muted);
+    margin-top: 8px;
+}}
+h1 {{
+    font-size: 44px;
+    line-height: 1.15;
+    font-weight: 800;
+    color: #0f172a;
+    margin: 0 0 18px 0;
+    letter-spacing: -0.02em;
+}}
+.intro-card {{
+    background: #f8fbff;
+    border: 1px solid var(--border);
+    border-left: 5px solid var(--accent);
+    border-radius: 16px;
+    padding: 16px 18px;
+    margin: 0 0 24px 0;
+}}
+.intro {{
+    font-size: 19px;
+    margin: 0;
+    color: #18212f;
+}}
+.story-section {{
+    margin: 28px 0 0 0;
+    padding: 4px 0 0 0;
+}}
+h2 {{
+    font-size: 31px;
+    line-height: 1.22;
+    font-weight: 800;
+    color: #0f172a;
+    margin: 0 0 14px 0;
+    padding-top: 6px;
+}}
+h3 {{
+    font-size: 23px;
+    line-height: 1.3;
+    font-weight: 700;
+    color: #172033;
+    margin: 20px 0 10px 0;
+}}
+h4 {{
+    font-size: 18px;
+    line-height: 1.35;
+    font-weight: 700;
+    color: #22304a;
+    margin: 16px 0 8px 0;
+}}
+p {{
+    font-size: 18px;
+    color: #243041;
+    margin: 0 0 16px 0;
+}}
 @media (max-width: 720px) {{
-  .article-shell {{ padding: 18px 16px 24px; border-radius: 18px; }}
-  h1 {{ font-size: 34px; }}
-  h2 {{ font-size: 27px; }}
-  h3 {{ font-size: 21px; }}
-  body, p {{ font-size: 17px; }}
+    .article-shell {{ padding: 18px 16px 24px; border-radius: 18px; }}
+    h1 {{ font-size: 34px; }}
+    h2 {{ font-size: 27px; }}
+    h3 {{ font-size: 21px; }}
+    body, p {{ font-size: 17px; }}
 }}
 </style>
 </head>
@@ -412,9 +461,6 @@ figcaption {{ color: #6b7280; font-size: 14px; margin-top: 8px; }}
 </html>"""
 
 
-# =========================
-# IMAGE / YOAST LOGIC
-# =========================
 def sentence_case(text):
     text = re.sub(r"\s+", " ", (text or "")).strip()
     if not text:
@@ -442,8 +488,9 @@ def normalize_phrase(text, title_case=False):
     return low
 
 
-def trim_chars(text, max_chars):
-    return trim_at_word_boundary(text, max_chars)
+def trim_words(text: str, max_words: int) -> str:
+    words = [w for w in (text or "").split() if w]
+    return " ".join(words[:max_words]).strip()
 
 
 def infer_subject_from_article(h1, focus_keyphrase):
@@ -482,7 +529,7 @@ def build_image_alt_text(subject, action, context):
         parts.append(context)
     alt_text = sentence_case(" ".join([p for p in parts if p]))
     alt_text = trim_words(alt_text, 16)
-    return trim_chars(alt_text, 125)
+    return trim_at_word_boundary(alt_text, 125)
 
 
 def build_image_title(subject, context):
@@ -491,7 +538,7 @@ def build_image_title(subject, context):
         title = f"{title} {context}"
     title = normalize_phrase(title, title_case=True)
     title = trim_words(title, 8)
-    return trim_chars(title, 70)
+    return trim_at_word_boundary(title, 70)
 
 
 def build_image_caption(subject, action, context):
@@ -505,7 +552,7 @@ def build_image_caption(subject, action, context):
 
     caption = sentence_case(" ".join([p for p in parts if p]))
     caption = trim_words(caption, 24)
-    caption = trim_chars(caption, 160)
+    caption = trim_at_word_boundary(caption, 160)
     if caption and not caption.endswith("."):
         caption += "."
     return caption
@@ -546,9 +593,6 @@ def export_image_under_target_bytes(image: Image.Image, target_kb=100) -> bytes:
     return best
 
 
-# =========================
-# ROUTES
-# =========================
 @app.route("/")
 def index():
     return render_template("index.html")
@@ -602,27 +646,27 @@ def api_process():
         "plain_text": plain_text,
         "structure": structure,
         "wp_html": wp_html,
-
         "h1_copy": h1,
         "intro_copy": intro,
         "headings_copy": "\n".join(headings_summary),
         "structure_copy": structure,
         "body_copy": "\n\n".join(body_blocks),
-
         "focus_keyphrase_copy": focus_keyphrase,
         "seo_title_copy": seo_title,
         "meta_description_copy": meta_description,
         "slug_copy": slug,
         "short_summary_copy": short_summary,
-
+        "alt_text_copy": "",
+        "img_title_copy": "",
+        "caption_copy": "",
         "focus_keyphrase_value": focus_keyphrase,
         "seo_title_value": seo_title,
         "meta_description_value": meta_description,
         "slug_value": slug,
         "short_summary_value": short_summary,
-
         "seo_title_options": seo_titles,
-        "meta_options": meta_options
+        "meta_options": meta_options,
+        "status": "SEO output generated - V8 cleaner UI, smarter headings, better export - HTML and DOCX export ready"
     })
 
 
@@ -633,6 +677,18 @@ def api_image_seo():
     intro = data.get("intro", "")
     focus_keyphrase = data.get("focus_keyphrase", "")
     scene_notes = data.get("scene_notes", "")
+    alt_existing = (data.get("alt_text") or "").strip()
+    title_existing = (data.get("img_title") or "").strip()
+    caption_existing = (data.get("caption") or "").strip()
+
+    if alt_existing and title_existing and caption_existing:
+        return jsonify({
+            "ok": True,
+            "alt_text": alt_existing,
+            "img_title": title_existing,
+            "caption": caption_existing,
+            "status": "Featured image SEO fields already filled"
+        })
 
     subject = infer_subject_from_article(h1, focus_keyphrase)
     action = infer_action_from_article(h1, intro)
@@ -646,7 +702,8 @@ def api_image_seo():
         "ok": True,
         "alt_text": alt_text,
         "img_title": img_title,
-        "caption": caption
+        "caption": caption,
+        "status": "Generated Alt Text, Img Title, and Caption for WordPress + Yoast"
     })
 
 
@@ -687,7 +744,8 @@ def api_crop_image():
                 "image_data_uri": image_bytes_to_data_uri(out_bytes, "image/jpeg"),
                 "width": cropped.width,
                 "height": cropped.height,
-                "size_kb": round(len(out_bytes) / 1024, 1)
+                "size_kb": round(len(out_bytes) / 1024, 1),
+                "status": "Exported cropped featured image under 100KB"
             })
 
         out_bytes = pil_to_jpeg_bytes(cropped, 92)
@@ -696,7 +754,8 @@ def api_crop_image():
             "image_data_uri": image_bytes_to_data_uri(out_bytes, "image/jpeg"),
             "width": cropped.width,
             "height": cropped.height,
-            "size_kb": round(len(out_bytes) / 1024, 1)
+            "size_kb": round(len(out_bytes) / 1024, 1),
+            "status": "Crop applied to live preview"
         })
 
     except Exception as exc:
@@ -747,7 +806,7 @@ def api_export_docx():
     sec.right_margin = Inches(0.6)
 
     if image_data_uri.startswith("data:image/"):
-        header, encoded = image_data_uri.split(",", 1)
+        _, encoded = image_data_uri.split(",", 1)
         img_bytes = base64.b64decode(encoded)
         img_stream = io.BytesIO(img_bytes)
         doc.add_picture(img_stream, width=Inches(6.8))
