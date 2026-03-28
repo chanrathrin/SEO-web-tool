@@ -15,6 +15,13 @@
   --purple: #7c3aed;
   --pink: #db2777;
   --slate: #1b2740;
+
+  --indigo: #4f46e5;
+  --violet: #8b5cf6;
+  --cyan: #0891b2;
+  --emerald: #059669;
+  --amber: #d97706;
+  --rose: #e11d48;
 }
 
 * {
@@ -154,13 +161,14 @@ body {
   font-size: 14px;
   font-weight: 800;
   cursor: pointer;
-  transition: transform 0.15s ease, opacity 0.15s ease;
+  transition: transform 0.15s ease, opacity 0.15s ease, filter 0.15s ease;
   box-shadow: 0 10px 24px rgba(0, 0, 0, 0.22);
 }
 
 .btn:hover {
   transform: translateY(-1px);
-  opacity: 0.96;
+  opacity: 0.97;
+  filter: brightness(1.05);
 }
 
 .btn-blue { background: var(--blue); }
@@ -169,6 +177,12 @@ body {
 .btn-orange { background: var(--orange); }
 .btn-purple { background: var(--purple); }
 .btn-pink { background: var(--pink); }
+.btn-indigo { background: var(--indigo); }
+.btn-violet { background: var(--violet); }
+.btn-cyan { background: var(--cyan); }
+.btn-emerald { background: var(--emerald); }
+.btn-amber { background: var(--amber); }
+.btn-rose { background: var(--rose); }
 
 .btn-slate {
   background: var(--slate);
