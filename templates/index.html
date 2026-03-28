@@ -20,20 +20,38 @@
 
     <section class="quick-tools card">
       <div class="section-title">Quick Actions</div>
-      <div class="toolbar wrap compact">
-        <button class="btn btn-green" id="generateBtn">Generate News Format</button>
-        <button class="btn btn-red" id="clearInputBtn">Clear Input</button>
-        <button class="btn btn-blue" id="copyWpHtmlBtn">Copy WP HTML</button>
-        <button class="btn btn-slate" id="copyAllOutputBtn">Copy All Output</button>
-        <button class="btn btn-red" id="clearOutputBtn">Clear Output</button>
 
-        <button class="btn btn-indigo" id="quickCopyFocusKeyphraseBtn">Copy Focus Keyphrase</button>
-        <button class="btn btn-violet" id="quickCopySeoTitleBtn">Copy SEO Title</button>
-        <button class="btn btn-cyan" id="quickCopyMetaDescriptionBtn">Copy Meta Description</button>
+      <div class="quick-row">
+        <div class="quick-group quick-group-main">
+          <div class="quick-group-title">Main Actions</div>
+          <div class="toolbar wrap compact quick-toolbar">
+            <button class="btn btn-green" id="generateBtn">Generate News Format</button>
+            <button class="btn btn-red" id="clearInputBtn">Clear Input</button>
+            <button class="btn btn-blue" id="copyWpHtmlBtn">Copy WP HTML</button>
+            <button class="btn btn-slate" id="copyAllOutputBtn">Copy All Output</button>
+            <button class="btn btn-red" id="clearOutputBtn">Clear Output</button>
+          </div>
+        </div>
 
-        <button class="btn btn-emerald" id="quickCopyAltTextBtn">Copy Alt Text</button>
-        <button class="btn btn-amber" id="quickCopyImgTitleBtn">Copy Img Title</button>
-        <button class="btn btn-rose" id="quickCopyCaptionBtn">Copy Caption</button>
+        <div class="quick-group quick-group-seo">
+          <div class="quick-group-title">SEO Fields</div>
+          <div class="toolbar wrap compact quick-toolbar">
+            <button class="btn btn-indigo" id="quickCopyFocusKeyphraseBtn">Copy Focus Keyphrase</button>
+            <button class="btn btn-violet" id="quickCopySeoTitleBtn">Copy SEO Title</button>
+            <button class="btn btn-cyan" id="quickCopyMetaDescriptionBtn">Copy Meta Description</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="quick-row">
+        <div class="quick-group quick-group-image">
+          <div class="quick-group-title">Featured Image SEO</div>
+          <div class="toolbar wrap compact quick-toolbar">
+            <button class="btn btn-emerald" id="quickCopyAltTextBtn">Copy Alt Text</button>
+            <button class="btn btn-amber" id="quickCopyImgTitleBtn">Copy Img Title</button>
+            <button class="btn btn-rose" id="quickCopyCaptionBtn">Copy Caption</button>
+          </div>
+        </div>
       </div>
     </section>
 
