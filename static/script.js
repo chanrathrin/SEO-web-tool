@@ -28,6 +28,7 @@ const els = {
   cropBox: document.getElementById("cropBox"),
   cropPreview: document.getElementById("cropPreview"),
   previewMeta: document.getElementById("previewMeta"),
+  emptyCanvasText: document.getElementById("emptyCanvasText"),
 
   sceneNotes: document.getElementById("sceneNotes"),
   altText: document.getElementById("altText"),
@@ -73,59 +74,20 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
-function getFieldValue(id) {
-  const el = document.getElementById(id);
-  return (el?.value || "").trim();
-}
-
-async function copyText(text, successMessage = "Copied") {
+async function copyText(text, okMessage = "Copied") {
   if (!text || !text.trim()) {
     setStatus("Nothing to copy");
     showToast("Nothing to copy");
     return;
   }
   await navigator.clipboard.writeText(text);
-  setStatus(successMessage);
-  showToast(successMessage);
+  setStatus(okMessage);
+  showToast(okMessage);
 }
 
-function renderPreview() {
-  if (!state.processed) {
-    els.seoPreview.innerHTML = `<p class="placeholder-text">Formatted SEO output will appear here.</p>`;
-    return;
-  }
-
-  const data = state.processed;
-  const html = [];
-
-  if (data.h1_copy) html.push(`<h1>${escapeHtml(data.h1_copy)}</h1>`);
-  if (data.intro_copy) html.push(`<p>${escapeHtml(data.intro_copy)}</p>`);
-
-  (data.structure_copy || []).forEach(sec => {
-    if (sec.h2) html.push(`<h2>${escapeHtml(sec.h2)}</h2>`);
-    (sec.subsections || []).forEach(sub => {
-      if (sub.h3) html.push(`<h3>${escapeHtml(sub.h3)}</h3>`);
-      if (sub.h4) html.push(`<h4>${escapeHtml(sub.h4)}</h4>`);
-      if (sub.body) {
-        const bodyHtml = escapeHtml(sub.body).replace(/\n\n/g, "<br><br>");
-        html.push(`<p>${bodyHtml}</p>`);
-      }
-    });
-  });
-
-  els.seoPreview.innerHTML = html.join("");
-}
-
-function updateFieldValuesFromProcessed() {
-  if (!state.processed) return;
-  els.focusKeyphrase.value = state.processed.focus_keyphrase_value || "";
-  els.seoTitle.value = state.processed.seo_title_value || "";
-  els.metaDescription.value = state.processed.meta_description_value || "";
-  els.slug.value = state.processed.slug_value || "";
-  els.shortSummary.value = state.processed.short_summary_value || "";
-
-  els.titleOptions.value = (state.processed.seo_title_options || []).join("\n");
-  els.metaOptions.value = (state.processed.meta_options || []).join("\n");
+function getFieldValue(id) {
+  const el = document.getElementById(id);
+  return (el?.value || "").trim();
 }
 
 function updateProcessedCopiesFromFields() {
@@ -140,6 +102,49 @@ function updateProcessedCopiesFromFields() {
   state.processed.slug_value = els.slug.value.trim();
   state.processed.short_summary_copy = els.shortSummary.value.trim();
   state.processed.short_summary_value = els.shortSummary.value.trim();
+  state.processed.alt_text_copy = els.altText.value.trim();
+  state.processed.img_title_copy = els.imgTitle.value.trim();
+  state.processed.caption_copy = els.caption.value.trim();
+}
+
+function renderPreview() {
+  if (!state.processed) {
+    els.seoPreview.innerHTML = `<p class="placeholder-text">Formatted SEO output will appear here.</p>`;
+    return;
+  }
+
+  const data = state.processed;
+  const html = [];
+
+  if (data.h1_copy) html.push(`<h1>${escapeHtml(data.h1_copy)}</h1>`);
+  if (data.intro_copy) html.push(`<div class="intro-card"><p class="intro">${escapeHtml(data.intro_copy)}</p></div>`);
+
+  (data.structure_copy || []).forEach(sec => {
+    html.push(`<section class="story-section">`);
+    if (sec.h2) html.push(`<h2>${escapeHtml(sec.h2)}</h2>`);
+    (sec.subsections || []).forEach(sub => {
+      if (sub.h3) html.push(`<h3>${escapeHtml(sub.h3)}</h3>`);
+      if (sub.h4) html.push(`<h4>${escapeHtml(sub.h4)}</h4>`);
+      if (sub.body) {
+        const paragraphs = sub.body.split("\n\n").filter(Boolean);
+        paragraphs.forEach(p => html.push(`<p>${escapeHtml(p)}</p>`));
+      }
+    });
+    html.push(`</section>`);
+  });
+
+  els.seoPreview.innerHTML = html.join("");
+}
+
+function updateFieldValuesFromProcessed() {
+  if (!state.processed) return;
+  els.focusKeyphrase.value = state.processed.focus_keyphrase_value || "";
+  els.seoTitle.value = state.processed.seo_title_value || "";
+  els.metaDescription.value = state.processed.meta_description_value || "";
+  els.slug.value = state.processed.slug_value || "";
+  els.shortSummary.value = state.processed.short_summary_value || "";
+  els.titleOptions.value = (state.processed.seo_title_options || []).join("\n");
+  els.metaOptions.value = (state.processed.meta_options || []).join("\n");
 }
 
 function buildWpHtmlFromState() {
@@ -163,9 +168,10 @@ function buildWpHtmlFromState() {
   }
 
   if (h1) parts.push(`<h1>${escapeHtml(h1)}</h1>`);
-  if (intro) parts.push(`<p>${escapeHtml(intro)}</p>`);
+  if (intro) parts.push(`<div class="intro-card"><p class="intro">${escapeHtml(intro)}</p></div>`);
 
   structure.forEach(sec => {
+    parts.push(`<section class="story-section">`);
     if (sec.h2) parts.push(`<h2>${escapeHtml(sec.h2)}</h2>`);
     (sec.subsections || []).forEach(sub => {
       if (sub.h3) parts.push(`<h3>${escapeHtml(sub.h3)}</h3>`);
@@ -174,6 +180,7 @@ function buildWpHtmlFromState() {
         parts.push(`<p>${escapeHtml(p)}</p>`);
       });
     });
+    parts.push(`</section>`);
   });
 
   return parts.join("\n");
@@ -185,7 +192,7 @@ function refreshWpHtmlOutput() {
 
 async function generateArticle() {
   const article = els.articleInput.value.trim();
-  if (!article) {
+  if (!article || article === "Paste your article here.") {
     setStatus("Please paste an article first");
     showToast("Please paste an article first");
     return;
@@ -209,28 +216,35 @@ async function generateArticle() {
     renderPreview();
     updateFieldValuesFromProcessed();
     refreshWpHtmlOutput();
-    setStatus("SEO output generated - HTML and DOCX export ready");
+    setStatus(data.status || "SEO output generated");
     showToast("SEO output generated");
-  } catch (err) {
+  } catch {
     setStatus("Generate failed");
     showToast("Generate failed");
   }
 }
 
 function clearInput() {
-  els.articleInput.value = "";
+  els.articleInput.value = "Paste your article here.";
   setStatus("Input cleared");
   showToast("Input cleared");
 }
 
-function clearImageSeoFields() {
+function clearImageSeoFields(silent = false) {
   els.sceneNotes.value = "";
   els.altText.value = "";
   els.imgTitle.value = "";
   els.caption.value = "";
+  if (state.processed) {
+    state.processed.alt_text_copy = "";
+    state.processed.img_title_copy = "";
+    state.processed.caption_copy = "";
+  }
   refreshWpHtmlOutput();
-  setStatus("Image SEO cleared");
-  showToast("Image SEO cleared");
+  if (!silent) {
+    setStatus("Image SEO cleared");
+    showToast("Image SEO cleared");
+  }
 }
 
 function clearOutput() {
@@ -240,9 +254,9 @@ function clearOutput() {
   state.sourceImageLoaded = false;
 
   els.seoPreview.innerHTML = `<p class="placeholder-text">Formatted SEO output will appear here.</p>`;
-  els.wpHtmlOutput.value = "";
   els.titleOptions.value = "";
   els.metaOptions.value = "";
+  els.wpHtmlOutput.value = "";
 
   els.focusKeyphrase.value = "";
   els.seoTitle.value = "";
@@ -250,7 +264,7 @@ function clearOutput() {
   els.slug.value = "";
   els.shortSummary.value = "";
 
-  clearImageSeoFields();
+  clearImageSeoFields(true);
 
   els.imageInput.value = "";
   els.sourceImage.src = "";
@@ -258,18 +272,44 @@ function clearOutput() {
   els.cropBox.style.display = "none";
   els.cropPreview.src = "";
   els.previewMeta.textContent = "Preset output size will appear here";
+  els.emptyCanvasText.style.display = "block";
 
   setStatus("Output cleared");
   showToast("Output cleared");
 }
 
-async function copyAllOutput() {
-  const payload = els.wpHtmlOutput.value.trim() || state.processed?.plain_text || "";
-  await copyText(payload, "Copied all output");
+async function copyWpHtml() {
+  const html = els.wpHtmlOutput.value.trim();
+  if (!html) {
+    setStatus("Nothing to copy");
+    showToast("Nothing to copy");
+    return;
+  }
+  const hasImage = !!state.latestImageDataUri;
+  if (hasImage) {
+    await copyText(html, "Copied WP HTML with featured image tag (WordPress may still require manual image upload)");
+  } else {
+    await copyText(html, "Copied WordPress-ready HTML");
+  }
 }
 
-async function copyWpHtml() {
-  await copyText(els.wpHtmlOutput.value, "Copied WordPress-ready HTML");
+async function copyAllOutput() {
+  if (!state.processed?.plain_text?.trim()) {
+    setStatus("Nothing to copy");
+    showToast("Nothing to copy");
+    return;
+  }
+
+  const htmlFragment = els.wpHtmlOutput.value.trim();
+  const payload = htmlFragment || state.processed.plain_text;
+
+  if (htmlFragment && state.latestImageDataUri) {
+    await copyText(payload, "Copied WP HTML with featured image tag (WordPress may still require manual image upload)");
+  } else if (htmlFragment) {
+    await copyText(payload, "Copied WordPress-ready HTML");
+  } else {
+    await copyText(payload, "Copied all output");
+  }
 }
 
 async function copySection(key) {
@@ -279,7 +319,27 @@ async function copySection(key) {
     return;
   }
   updateProcessedCopiesFromFields();
-  await copyText(state.processed[key] || "", "Copied section");
+  const labelMap = {
+    h1_copy: "H1 Title",
+    intro_copy: "Introduction",
+    headings_copy: "Section Headings",
+    body_copy: "Main Content Body",
+    focus_keyphrase_copy: "Focus Keyphrase",
+    seo_title_copy: "SEO Title",
+    meta_description_copy: "Meta Description",
+    slug_copy: "Slug (URL)",
+    short_summary_copy: "Short Summary",
+    alt_text_copy: "Alt Text",
+    img_title_copy: "Img Title",
+    caption_copy: "Caption"
+  };
+  const value = state.processed[key] || "";
+  if (!value.trim()) {
+    setStatus(`No content for ${labelMap[key] || "section"}`);
+    showToast(`No content for ${labelMap[key] || "section"}`);
+    return;
+  }
+  await copyText(value, `Copied: ${labelMap[key] || "Section"}`);
 }
 
 async function copyField(targetId) {
@@ -287,18 +347,21 @@ async function copyField(targetId) {
 }
 
 async function copyAllImageSeo() {
-  const payload = [
-    `Alt Text: ${els.altText.value.trim()}`,
-    `Img Title: ${els.imgTitle.value.trim()}`,
-    `Caption: ${els.caption.value.trim()}`
-  ].join("\n");
+  const alt = els.altText.value.trim();
+  const title = els.imgTitle.value.trim();
+  const caption = els.caption.value.trim();
 
-  const normalized = payload.replace("Alt Text: ", "").replace("Img Title: ", "").replace("Caption: ", "").trim();
-  if (!normalized) {
+  if (!alt && !title && !caption) {
     setStatus("No image SEO fields to copy");
     showToast("No image SEO fields to copy");
     return;
   }
+
+  const payload = [
+    `Alt Text: ${alt}`,
+    `Img Title: ${title}`,
+    `Caption: ${caption}`
+  ].join("\n");
 
   await copyText(payload, "Copied all featured image SEO fields");
 }
@@ -348,7 +411,6 @@ async function exportDocx() {
     showToast("Nothing to export");
     return;
   }
-  refreshWpHtmlOutput();
 
   const res = await fetch("/api/export-docx", {
     method: "POST",
@@ -383,6 +445,7 @@ function loadImage(file) {
   reader.onload = () => {
     els.sourceImage.onload = () => {
       els.sourceImage.style.display = "block";
+      els.emptyCanvasText.style.display = "none";
       state.sourceImageLoaded = true;
       initCropBox();
       setStatus("Featured image loaded");
@@ -436,9 +499,7 @@ function updateCropBox() {
 
 function setPreset(width, height) {
   state.selectedPreset = { width: Number(width), height: Number(height) };
-  if (state.sourceImageLoaded) {
-    initCropBox();
-  }
+  if (state.sourceImageLoaded) initCropBox();
   setStatus(`Preset ${width}x${height} selected`);
   showToast(`Preset ${width}x${height}`);
 }
@@ -575,9 +636,8 @@ async function cropImage(exportUnder100kb = false) {
     ? `Preview size: ${data.width} x ${data.height} • ${data.size_kb}KB`
     : `Preview size: ${data.width} x ${data.height}`;
 
-  setStatus(exportUnder100kb ? "Exported cropped image under 100KB" : "Crop applied to live preview");
+  setStatus(data.status || "Crop applied");
   showToast(exportUnder100kb ? "Exported <100KB" : "Crop applied");
-
   return data;
 }
 
@@ -588,20 +648,11 @@ async function applyCrop() {
 async function useCropInSeoOutput() {
   const data = await cropImage(false);
   if (!data) return;
-
   state.latestImageDataUri = data.image_data_uri;
   refreshWpHtmlOutput();
   await generateImageSeo(true);
   setStatus("Cropped image sent to SEO Output and Yoast image fields updated");
   showToast("Crop used in SEO output");
-}
-
-async function exportUnder100() {
-  const data = await cropImage(true);
-  if (!data) return;
-
-  const blob = dataUriToBlob(data.image_data_uri);
-  downloadBlob(blob, "cropped-featured-image-under-100kb.jpg");
 }
 
 function dataUriToBlob(dataUri) {
@@ -613,12 +664,22 @@ function dataUriToBlob(dataUri) {
   return new Blob([arr], { type: mime });
 }
 
+async function exportUnder100() {
+  const data = await cropImage(true);
+  if (!data) return;
+  const blob = dataUriToBlob(data.image_data_uri);
+  downloadBlob(blob, "cropped-featured-image-under-100kb.jpg");
+}
+
 async function generateImageSeo(silent = false) {
   const payload = {
     h1: state.processed?.h1_copy || "",
     intro: state.processed?.intro_copy || "",
     focus_keyphrase: els.focusKeyphrase.value.trim() || "",
-    scene_notes: els.sceneNotes.value.trim() || ""
+    scene_notes: els.sceneNotes.value.trim() || "",
+    alt_text: els.altText.value.trim(),
+    img_title: els.imgTitle.value.trim(),
+    caption: els.caption.value.trim()
   };
 
   const res = await fetch("/api/image-seo", {
@@ -637,24 +698,38 @@ async function generateImageSeo(silent = false) {
   els.altText.value = data.alt_text || "";
   els.imgTitle.value = data.img_title || "";
   els.caption.value = data.caption || "";
-  refreshWpHtmlOutput();
 
+  if (state.processed) {
+    state.processed.alt_text_copy = els.altText.value.trim();
+    state.processed.img_title_copy = els.imgTitle.value.trim();
+    state.processed.caption_copy = els.caption.value.trim();
+  }
+
+  refreshWpHtmlOutput();
   if (!silent) {
-    setStatus("Generated Alt Text, Img Title, and Caption for WordPress + Yoast");
+    setStatus(data.status || "Generated image SEO");
     showToast("Generated image SEO");
   }
 }
 
-function bindLiveWpUpdates() {
-  [els.altText, els.imgTitle, els.caption, els.focusKeyphrase, els.seoTitle, els.metaDescription, els.slug, els.shortSummary]
-    .forEach(el => {
-      ["input", "change"].forEach(evt => {
-        el.addEventListener(evt, () => {
-          updateProcessedCopiesFromFields();
-          refreshWpHtmlOutput();
-        });
+function bindLiveUpdates() {
+  [
+    els.focusKeyphrase,
+    els.seoTitle,
+    els.metaDescription,
+    els.slug,
+    els.shortSummary,
+    els.altText,
+    els.imgTitle,
+    els.caption
+  ].forEach(el => {
+    ["input", "change"].forEach(evt => {
+      el.addEventListener(evt, () => {
+        updateProcessedCopiesFromFields();
+        refreshWpHtmlOutput();
       });
     });
+  });
 }
 
 els.generateBtn.addEventListener("click", generateArticle);
@@ -688,9 +763,9 @@ els.useCroppedInSeoBtn.addEventListener("click", useCropInSeoOutput);
 els.exportUnder100Btn.addEventListener("click", exportUnder100);
 els.generateImageSeoBtn.addEventListener("click", () => generateImageSeo(false));
 els.copyImageSeoBtn.addEventListener("click", copyAllImageSeo);
-els.clearImageSeoBtn.addEventListener("click", clearImageSeoFields);
+els.clearImageSeoBtn.addEventListener("click", () => clearImageSeoFields(false));
 
 enableCropInteractions();
-bindLiveWpUpdates();
+bindLiveUpdates();
 refreshWpHtmlOutput();
 setStatus("Ready");
