@@ -3,47 +3,52 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Summary AI V8 Web</title>
+  <title>Summary AI V8</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
   <div class="app-shell">
     <header class="app-header card">
       <div>
-        <h1>Summary AI V8 Web</h1>
-        <p>Full same-tools version</p>
+        <h1>Summary AI V8</h1>
+        <p>V8 cleaner UI, smarter headings, better export</p>
       </div>
-      <div id="statusBar" class="status-pill">Ready</div>
+      <div class="status-frame">
+        <span id="statusBar">Ready</span>
+      </div>
     </header>
 
-    <section class="grid two-col">
+    <section class="card quick-top-card">
+      <div class="section-head">
+        <h2>Quick Top Tools</h2>
+        <p>Fast actions for your workflow</p>
+      </div>
+      <div class="toolbar wrap">
+        <button class="btn btn-success" id="generateBtn">Generate News Format</button>
+        <button class="btn btn-danger" id="clearInputBtn">Clear Input</button>
+        <button class="btn btn-primary" id="copyWpHtmlBtn">Copy WP HTML</button>
+        <button class="btn btn-secondary" id="copyAllOutputBtn">Copy All Output</button>
+        <button class="btn btn-danger" id="clearOutputBtn">Clear Output</button>
+        <button class="btn btn-purple" id="exportHtmlBtn">Export HTML</button>
+        <button class="btn btn-pink" id="exportDocxBtn">Export DOCX</button>
+        <button class="btn btn-warning" id="exportTxtBtn">Export TXT</button>
+      </div>
+    </section>
+
+    <section class="grid two-col mt-20">
       <div class="card">
         <div class="section-head">
           <h2>Input Article</h2>
+          <p>Paste your article here.</p>
         </div>
-
-        <div class="toolbar">
-          <button class="btn btn-success" id="generateBtn">Generate News Format</button>
-          <button class="btn btn-danger" id="clearInputBtn">Clear Input</button>
-        </div>
-
-        <textarea id="articleInput" placeholder="Paste your article here."></textarea>
+        <textarea id="articleInput">Paste your article here.</textarea>
       </div>
 
       <div class="card">
         <div class="section-head">
           <h2>SEO Output</h2>
+          <p>Formatted SEO output will appear here.</p>
         </div>
-
-        <div class="toolbar">
-          <button class="btn btn-primary" id="copyWpHtmlBtn">Copy WP HTML</button>
-          <button class="btn btn-secondary" id="copyAllOutputBtn">Copy All Output</button>
-          <button class="btn btn-danger" id="clearOutputBtn">Clear Output</button>
-          <button class="btn btn-purple" id="exportHtmlBtn">Export HTML</button>
-          <button class="btn btn-pink" id="exportDocxBtn">Export DOCX</button>
-          <button class="btn btn-warning" id="exportTxtBtn">Export TXT</button>
-        </div>
-
         <div id="seoPreview" class="preview-box">
           <p class="placeholder-text">Formatted SEO output will appear here.</p>
         </div>
@@ -53,7 +58,8 @@
     <section class="grid two-col mt-20">
       <div class="card">
         <div class="section-head">
-          <h2>Copy Output Sections</h2>
+          <h2>Output Actions</h2>
+          <p>Copy each section exactly like the desktop workflow</p>
         </div>
 
         <div class="copy-grid">
@@ -64,12 +70,18 @@
           <button class="btn btn-secondary copy-section-btn" data-key="focus_keyphrase_copy">Focus Keyphrase</button>
           <button class="btn btn-secondary copy-section-btn" data-key="seo_title_copy">SEO Title</button>
           <button class="btn btn-secondary copy-section-btn" data-key="meta_description_copy">Meta Description</button>
-          <button class="btn btn-secondary copy-section-btn" data-key="slug_copy">Slug</button>
+          <button class="btn btn-secondary copy-section-btn" data-key="slug_copy">Slug (URL)</button>
           <button class="btn btn-secondary copy-section-btn" data-key="short_summary_copy">Short Summary</button>
+          <button class="btn btn-secondary copy-section-btn" data-key="alt_text_copy">Alt Text</button>
+          <button class="btn btn-secondary copy-section-btn" data-key="img_title_copy">Img Title</button>
+          <button class="btn btn-secondary copy-section-btn" data-key="caption_copy">Caption</button>
         </div>
+      </div>
 
-        <div class="section-head mt-20">
+      <div class="card">
+        <div class="section-head">
           <h2>SEO Fields</h2>
+          <p>Editable SEO values</p>
         </div>
 
         <div class="field-grid">
@@ -99,7 +111,7 @@
           </label>
         </div>
 
-        <div class="toolbar mt-16">
+        <div class="toolbar mt-16 wrap">
           <button class="btn btn-secondary copy-field-btn" data-target="focusKeyphrase">Copy Focus Keyphrase</button>
           <button class="btn btn-secondary copy-field-btn" data-target="seoTitle">Copy SEO Title</button>
           <button class="btn btn-secondary copy-field-btn" data-target="metaDescription">Copy Meta Description</button>
@@ -117,10 +129,13 @@
         </div>
         <textarea id="metaOptions" rows="5" readonly></textarea>
       </div>
+    </section>
 
+    <section class="grid two-col mt-20">
       <div class="card">
         <div class="section-head">
-          <h2>Featured Image + Crop Tool</h2>
+          <h2>Featured Image</h2>
+          <p>Import, crop, preview, and use in WordPress output</p>
         </div>
 
         <div class="toolbar wrap">
@@ -137,25 +152,35 @@
         </div>
 
         <div class="crop-grid">
-          <div class="card inset-card">
-            <div class="mini-title">Image Canvas</div>
+          <div class="inset-card">
+            <div class="mini-head">
+              <h3>Canvas</h3>
+              <p>Drag the box, resize from bottom-right</p>
+            </div>
             <div class="canvas-wrap" id="canvasWrap">
               <img id="sourceImage" alt="">
               <div id="cropBox">
                 <span class="resize-handle br"></span>
               </div>
+              <div id="emptyCanvasText">No featured image yet</div>
             </div>
           </div>
 
-          <div class="card inset-card">
-            <div class="mini-title">Live Preview</div>
+          <div class="inset-card">
+            <div class="mini-head">
+              <h3>Preview</h3>
+              <p>Cropped output preview</p>
+            </div>
             <img id="cropPreview" alt="">
-            <div id="previewMeta" class="small muted">Preset output size will appear here</div>
+            <div id="previewMeta" class="preview-meta">Preset output size will appear here</div>
           </div>
         </div>
+      </div>
 
-        <div class="section-head mt-20">
+      <div class="card">
+        <div class="section-head">
           <h2>Featured Image SEO</h2>
+          <p>Generate Alt Text, Img Title, and Caption for WordPress + Yoast</p>
         </div>
 
         <div class="toolbar wrap">
@@ -191,6 +216,7 @@
     <section class="card mt-20">
       <div class="section-head">
         <h2>WordPress HTML Output</h2>
+        <p>Ready to paste into WordPress</p>
       </div>
       <textarea id="wpHtmlOutput" class="code-output" readonly></textarea>
     </section>
