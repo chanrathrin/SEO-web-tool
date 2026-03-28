@@ -43,6 +43,14 @@ const els = {
   clearOutputBtn: document.getElementById("clearOutputBtn"),
   copyWpHtmlBtn: document.getElementById("copyWpHtmlBtn"),
   copyAllOutputBtn: document.getElementById("copyAllOutputBtn"),
+
+  quickCopyFocusKeyphraseBtn: document.getElementById("quickCopyFocusKeyphraseBtn"),
+  quickCopySeoTitleBtn: document.getElementById("quickCopySeoTitleBtn"),
+  quickCopyMetaDescriptionBtn: document.getElementById("quickCopyMetaDescriptionBtn"),
+  quickCopyAltTextBtn: document.getElementById("quickCopyAltTextBtn"),
+  quickCopyImgTitleBtn: document.getElementById("quickCopyImgTitleBtn"),
+  quickCopyCaptionBtn: document.getElementById("quickCopyCaptionBtn"),
+
   exportHtmlBtn: document.getElementById("exportHtmlBtn"),
   exportDocxBtn: document.getElementById("exportDocxBtn"),
   exportTxtBtn: document.getElementById("exportTxtBtn"),
@@ -351,9 +359,9 @@ async function copySection(key) {
   await copyText(value, `Copied: ${labelMap[key] || "Section"}`);
 }
 
-async function copyField(targetId) {
+async function copyField(targetId, label = "field") {
   const el = document.getElementById(targetId);
-  await copyText(el?.value || "", "Copied field");
+  await copyText(el?.value || "", `Copied ${label}`);
 }
 
 async function copyAllImageSeo() {
@@ -751,24 +759,36 @@ function bindLiveUpdates() {
   });
 }
 
-els.generateBtn.addEventListener("click", generateArticle);
-els.clearInputBtn.addEventListener("click", clearInput);
-els.clearOutputBtn.addEventListener("click", clearOutput);
-els.copyWpHtmlBtn.addEventListener("click", copyWpHtml);
-els.copyAllOutputBtn.addEventListener("click", copyAllOutput);
-els.exportTxtBtn.addEventListener("click", exportTxt);
-els.exportHtmlBtn.addEventListener("click", exportHtml);
-els.exportDocxBtn.addEventListener("click", exportDocx);
+function bindIfExists(el, eventName, handler) {
+  if (el) el.addEventListener(eventName, handler);
+}
+
+bindIfExists(els.generateBtn, "click", generateArticle);
+bindIfExists(els.clearInputBtn, "click", clearInput);
+bindIfExists(els.clearOutputBtn, "click", clearOutput);
+bindIfExists(els.copyWpHtmlBtn, "click", copyWpHtml);
+bindIfExists(els.copyAllOutputBtn, "click", copyAllOutput);
+
+bindIfExists(els.quickCopyFocusKeyphraseBtn, "click", () => copyField("focusKeyphrase", "Focus Keyphrase"));
+bindIfExists(els.quickCopySeoTitleBtn, "click", () => copyField("seoTitle", "SEO Title"));
+bindIfExists(els.quickCopyMetaDescriptionBtn, "click", () => copyField("metaDescription", "Meta Description"));
+bindIfExists(els.quickCopyAltTextBtn, "click", () => copyField("altText", "Alt Text"));
+bindIfExists(els.quickCopyImgTitleBtn, "click", () => copyField("imgTitle", "Img Title"));
+bindIfExists(els.quickCopyCaptionBtn, "click", () => copyField("caption", "Caption"));
+
+bindIfExists(els.exportTxtBtn, "click", exportTxt);
+bindIfExists(els.exportHtmlBtn, "click", exportHtml);
+bindIfExists(els.exportDocxBtn, "click", exportDocx);
 
 document.querySelectorAll(".copy-section-btn").forEach(btn => {
   btn.addEventListener("click", () => copySection(btn.dataset.key));
 });
 
 document.querySelectorAll(".copy-field-btn").forEach(btn => {
-  btn.addEventListener("click", () => copyField(btn.dataset.target));
+  btn.addEventListener("click", () => copyField(btn.dataset.target, "field"));
 });
 
-els.imageInput.addEventListener("change", (e) => {
+bindIfExists(els.imageInput, "change", (e) => {
   const file = e.target.files?.[0];
   if (file) loadImage(file);
 });
@@ -777,12 +797,12 @@ document.querySelectorAll(".preset-btn").forEach(btn => {
   btn.addEventListener("click", () => setPreset(btn.dataset.width, btn.dataset.height));
 });
 
-els.applyCropBtn.addEventListener("click", applyCrop);
-els.useCroppedInSeoBtn.addEventListener("click", useCropInSeoOutput);
-els.exportUnder100Btn.addEventListener("click", exportUnder100);
-els.generateImageSeoBtn.addEventListener("click", () => generateImageSeo(false));
-els.copyImageSeoBtn.addEventListener("click", copyAllImageSeo);
-els.clearImageSeoBtn.addEventListener("click", () => clearImageSeoFields(false));
+bindIfExists(els.applyCropBtn, "click", applyCrop);
+bindIfExists(els.useCroppedInSeoBtn, "click", useCropInSeoOutput);
+bindIfExists(els.exportUnder100Btn, "click", exportUnder100);
+bindIfExists(els.generateImageSeoBtn, "click", () => generateImageSeo(false));
+bindIfExists(els.copyImageSeoBtn, "click", copyAllImageSeo);
+bindIfExists(els.clearImageSeoBtn, "click", () => clearImageSeoFields(false));
 
 enableCropInteractions();
 bindLiveUpdates();
