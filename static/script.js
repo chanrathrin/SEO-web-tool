@@ -85,11 +85,6 @@ async function copyText(text, okMessage = "Copied") {
   showToast(okMessage);
 }
 
-function getFieldValue(id) {
-  const el = document.getElementById(id);
-  return (el?.value || "").trim();
-}
-
 function updateProcessedCopiesFromFields() {
   if (!state.processed) return;
   state.processed.focus_keyphrase_copy = els.focusKeyphrase.value.trim();
@@ -107,6 +102,26 @@ function updateProcessedCopiesFromFields() {
   state.processed.caption_copy = els.caption.value.trim();
 }
 
+function updateFieldValuesFromProcessed() {
+  if (!state.processed) return;
+  els.focusKeyphrase.value = state.processed.focus_keyphrase_value || "";
+  els.seoTitle.value = state.processed.seo_title_value || "";
+  els.metaDescription.value = state.processed.meta_description_value || "";
+  els.slug.value = state.processed.slug_value || "";
+  els.shortSummary.value = state.processed.short_summary_value || "";
+
+  const titles = state.processed.seo_title_options || [];
+  els.titleOptions.value = "SEO Title Options\n\n" + (titles.length ? titles.join("\n") : "");
+
+  els.metaOptions.value =
+    "Meta + SEO Fields\n\n" +
+    `Focus Keyphrase: ${state.processed.focus_keyphrase_value || ""}\n` +
+    `SEO Title: ${state.processed.seo_title_value || ""}\n` +
+    `Meta Description: ${state.processed.meta_description_value || ""}\n` +
+    `Slug (URL): ${state.processed.slug_value || ""}\n` +
+    `Short Summary: ${state.processed.short_summary_value || ""}`;
+}
+
 function renderPreview() {
   if (!state.processed) {
     els.seoPreview.innerHTML = `<p class="placeholder-text">Formatted SEO output will appear here.</p>`;
@@ -117,10 +132,9 @@ function renderPreview() {
   const html = [];
 
   if (data.h1_copy) html.push(`<h1>${escapeHtml(data.h1_copy)}</h1>`);
-  if (data.intro_copy) html.push(`<div class="intro-card"><p class="intro">${escapeHtml(data.intro_copy)}</p></div>`);
+  if (data.intro_copy) html.push(`<p>${escapeHtml(data.intro_copy)}</p>`);
 
   (data.structure_copy || []).forEach(sec => {
-    html.push(`<section class="story-section">`);
     if (sec.h2) html.push(`<h2>${escapeHtml(sec.h2)}</h2>`);
     (sec.subsections || []).forEach(sub => {
       if (sub.h3) html.push(`<h3>${escapeHtml(sub.h3)}</h3>`);
@@ -130,21 +144,13 @@ function renderPreview() {
         paragraphs.forEach(p => html.push(`<p>${escapeHtml(p)}</p>`));
       }
     });
-    html.push(`</section>`);
   });
 
   els.seoPreview.innerHTML = html.join("");
-}
 
-function updateFieldValuesFromProcessed() {
-  if (!state.processed) return;
-  els.focusKeyphrase.value = state.processed.focus_keyphrase_value || "";
-  els.seoTitle.value = state.processed.seo_title_value || "";
-  els.metaDescription.value = state.processed.meta_description_value || "";
-  els.slug.value = state.processed.slug_value || "";
-  els.shortSummary.value = state.processed.short_summary_value || "";
-  els.titleOptions.value = (state.processed.seo_title_options || []).join("\n");
-  els.metaOptions.value = (state.processed.meta_options || []).join("\n");
+  requestAnimationFrame(() => {
+    els.seoPreview.scrollTop = 0;
+  });
 }
 
 function buildWpHtmlFromState() {
@@ -168,10 +174,9 @@ function buildWpHtmlFromState() {
   }
 
   if (h1) parts.push(`<h1>${escapeHtml(h1)}</h1>`);
-  if (intro) parts.push(`<div class="intro-card"><p class="intro">${escapeHtml(intro)}</p></div>`);
+  if (intro) parts.push(`<p>${escapeHtml(intro)}</p>`);
 
   structure.forEach(sec => {
-    parts.push(`<section class="story-section">`);
     if (sec.h2) parts.push(`<h2>${escapeHtml(sec.h2)}</h2>`);
     (sec.subsections || []).forEach(sub => {
       if (sub.h3) parts.push(`<h3>${escapeHtml(sub.h3)}</h3>`);
@@ -180,7 +185,6 @@ function buildWpHtmlFromState() {
         parts.push(`<p>${escapeHtml(p)}</p>`);
       });
     });
-    parts.push(`</section>`);
   });
 
   return parts.join("\n");
@@ -254,6 +258,7 @@ function clearOutput() {
   state.sourceImageLoaded = false;
 
   els.seoPreview.innerHTML = `<p class="placeholder-text">Formatted SEO output will appear here.</p>`;
+  els.seoPreview.scrollTop = 0;
   els.titleOptions.value = "";
   els.metaOptions.value = "";
   els.wpHtmlOutput.value = "";
@@ -285,8 +290,8 @@ async function copyWpHtml() {
     showToast("Nothing to copy");
     return;
   }
-  const hasImage = !!state.latestImageDataUri;
-  if (hasImage) {
+
+  if (state.latestImageDataUri) {
     await copyText(html, "Copied WP HTML with featured image tag (WordPress may still require manual image upload)");
   } else {
     await copyText(html, "Copied WordPress-ready HTML");
@@ -318,7 +323,9 @@ async function copySection(key) {
     showToast("Generate SEO output first");
     return;
   }
+
   updateProcessedCopiesFromFields();
+
   const labelMap = {
     h1_copy: "H1 Title",
     intro_copy: "Introduction",
@@ -333,17 +340,20 @@ async function copySection(key) {
     img_title_copy: "Img Title",
     caption_copy: "Caption"
   };
+
   const value = state.processed[key] || "";
   if (!value.trim()) {
     setStatus(`No content for ${labelMap[key] || "section"}`);
     showToast(`No content for ${labelMap[key] || "section"}`);
     return;
   }
+
   await copyText(value, `Copied: ${labelMap[key] || "Section"}`);
 }
 
 async function copyField(targetId) {
-  await copyText(getFieldValue(targetId), "Copied field");
+  const el = document.getElementById(targetId);
+  await copyText(el?.value || "", "Copied field");
 }
 
 async function copyAllImageSeo() {
@@ -390,6 +400,7 @@ async function exportHtml() {
     showToast("Nothing to export");
     return;
   }
+
   refreshWpHtmlOutput();
 
   const res = await fetch("/api/export-html", {
@@ -499,7 +510,9 @@ function updateCropBox() {
 
 function setPreset(width, height) {
   state.selectedPreset = { width: Number(width), height: Number(height) };
-  if (state.sourceImageLoaded) initCropBox();
+  if (state.sourceImageLoaded) {
+    initCropBox();
+  }
   setStatus(`Preset ${width}x${height} selected`);
   showToast(`Preset ${width}x${height}`);
 }
@@ -648,6 +661,7 @@ async function applyCrop() {
 async function useCropInSeoOutput() {
   const data = await cropImage(false);
   if (!data) return;
+
   state.latestImageDataUri = data.image_data_uri;
   refreshWpHtmlOutput();
   await generateImageSeo(true);
@@ -706,6 +720,7 @@ async function generateImageSeo(silent = false) {
   }
 
   refreshWpHtmlOutput();
+
   if (!silent) {
     setStatus(data.status || "Generated image SEO");
     showToast("Generated image SEO");
@@ -727,6 +742,10 @@ function bindLiveUpdates() {
       el.addEventListener(evt, () => {
         updateProcessedCopiesFromFields();
         refreshWpHtmlOutput();
+
+        if (state.processed) {
+          updateFieldValuesFromProcessed();
+        }
       });
     });
   });
@@ -767,5 +786,4 @@ els.clearImageSeoBtn.addEventListener("click", () => clearImageSeoFields(false))
 
 enableCropInteractions();
 bindLiveUpdates();
-refreshWpHtmlOutput();
 setStatus("Ready");
