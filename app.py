@@ -328,11 +328,10 @@ def build_wordpress_html_fragment(h1, intro, structure, image_data_uri="", alt_t
     if h1:
         parts.append(f"<h1>{esc(h1)}</h1>")
     if intro:
-        parts.append(f'<div class="intro-card"><p class="intro">{esc(intro)}</p></div>')
+        parts.append(f"<p>{esc(intro)}</p>")
 
     for sec in structure:
         if sec.get("h2"):
-            parts.append('<section class="story-section">')
             parts.append(f"<h2>{esc(sec['h2'])}</h2>")
         for sub in sec.get("subsections", []):
             if sub.get("h3"):
@@ -341,8 +340,6 @@ def build_wordpress_html_fragment(h1, intro, structure, image_data_uri="", alt_t
                 parts.append(f"<h4>{esc(sub['h4'])}</h4>")
             for p in [x.strip() for x in sub.get("body", "").split("\n\n") if x.strip()]:
                 parts.append(f"<p>{esc(p).replace(chr(10), '<br>')}</p>")
-        if sec.get("h2"):
-            parts.append("</section>")
 
     return "\n".join(parts).strip()
 
@@ -361,7 +358,6 @@ def build_html_document(h1, wp_html):
     --text: #1f2937;
     --muted: #4b5563;
     --border: #dbe4f0;
-    --accent: #2563eb;
 }}
 * {{ box-sizing: border-box; }}
 body {{
@@ -387,70 +383,11 @@ body {{
     width: 100%;
     border-radius: 18px;
 }}
-.featured-caption, figcaption {{
-    font-size: 14px;
-    color: var(--muted);
-    margin-top: 8px;
-}}
-h1 {{
-    font-size: 44px;
-    line-height: 1.15;
-    font-weight: 800;
-    color: #0f172a;
-    margin: 0 0 18px 0;
-    letter-spacing: -0.02em;
-}}
-.intro-card {{
-    background: #f8fbff;
-    border: 1px solid var(--border);
-    border-left: 5px solid var(--accent);
-    border-radius: 16px;
-    padding: 16px 18px;
-    margin: 0 0 24px 0;
-}}
-.intro {{
-    font-size: 19px;
-    margin: 0;
-    color: #18212f;
-}}
-.story-section {{
-    margin: 28px 0 0 0;
-    padding: 4px 0 0 0;
-}}
-h2 {{
-    font-size: 31px;
-    line-height: 1.22;
-    font-weight: 800;
-    color: #0f172a;
-    margin: 0 0 14px 0;
-    padding-top: 6px;
-}}
-h3 {{
-    font-size: 23px;
-    line-height: 1.3;
-    font-weight: 700;
-    color: #172033;
-    margin: 20px 0 10px 0;
-}}
-h4 {{
-    font-size: 18px;
-    line-height: 1.35;
-    font-weight: 700;
-    color: #22304a;
-    margin: 16px 0 8px 0;
-}}
-p {{
-    font-size: 18px;
-    color: #243041;
-    margin: 0 0 16px 0;
-}}
-@media (max-width: 720px) {{
-    .article-shell {{ padding: 18px 16px 24px; border-radius: 18px; }}
-    h1 {{ font-size: 34px; }}
-    h2 {{ font-size: 27px; }}
-    h3 {{ font-size: 21px; }}
-    body, p {{ font-size: 17px; }}
-}}
+h1 {{ font-size: 44px; line-height: 1.15; margin: 0 0 18px; color: #162033; }}
+h2 {{ font-size: 31px; margin: 28px 0 14px; color: #22304a; }}
+h3 {{ font-size: 23px; margin: 20px 0 10px; color: #22304a; }}
+p {{ font-size: 18px; margin: 0 0 16px; color: #243041; }}
+figcaption {{ color: #6b7280; font-size: 14px; margin-top: 8px; }}
 </style>
 </head>
 <body>
@@ -641,6 +578,8 @@ def api_process():
         if sub_bodies:
             body_blocks.append("\n\n".join(sub_bodies))
 
+    status = "SEO output generated - V8 cleaner UI, smarter headings, better export - HTML and DOCX export ready"
+
     return jsonify({
         "ok": True,
         "plain_text": plain_text,
@@ -666,7 +605,7 @@ def api_process():
         "short_summary_value": short_summary,
         "seo_title_options": seo_titles,
         "meta_options": meta_options,
-        "status": "SEO output generated - V8 cleaner UI, smarter headings, better export - HTML and DOCX export ready"
+        "status": status
     })
 
 
