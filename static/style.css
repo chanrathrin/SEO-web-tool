@@ -203,13 +203,17 @@ body{padding:14px}
 
 .quick-wrap{
   display:grid;
-  grid-template-columns:1fr 1fr;
+  grid-template-columns:1fr;
   gap:16px;
   padding:0 12px 12px;
 }
 
 .quick-block{
   padding-top:2px;
+}
+
+.quick-block-full{
+  grid-column:1 / -1;
 }
 
 .tools-row,.quick-row,.modal-buttons{
@@ -229,6 +233,13 @@ body{padding:14px}
 .quick-subtitle{
   padding:0 14px 8px;
   font-size:11px;
+  color:var(--text-soft);
+}
+
+.quick-mini-label{
+  padding:2px 14px 6px;
+  font-size:12px;
+  font-weight:700;
   color:var(--text-soft);
 }
 
