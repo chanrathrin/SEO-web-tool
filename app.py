@@ -40,22 +40,34 @@ def verify_together_api_key(api_key, timeout=20):
     return response.json()
 
 
-def together_chat_completion(api_key, model, messages, temperature=0.3, timeout=60):
+def together_chat_completion(api_key, model, messages, temperature=0.3, timeout=60, retries=3):
     payload = {"model": model, "messages": messages, "temperature": temperature}
-    response = requests.post(
-        f"{TOGETHER_BASE_URL}/chat/completions",
-        headers=together_headers(api_key),
-        json=payload,
-        timeout=timeout,
-    )
-    if response.status_code >= 400:
+    last_err = None
+    for attempt in range(retries):
         try:
-            data = response.json()
-            detail = data.get("error", {}).get("message") or data.get("message") or response.text
-        except Exception:
-            detail = response.text
-        raise RuntimeError(f"HTTP {response.status_code}: {detail}")
-    return response.json()
+            response = requests.post(
+                f"{TOGETHER_BASE_URL}/chat/completions",
+                headers=together_headers(api_key),
+                json=payload,
+                timeout=timeout,
+            )
+            if response.status_code >= 400:
+                try:
+                    data = response.json()
+                    detail = data.get("error", {}).get("message") or data.get("message") or response.text
+                except Exception:
+                    detail = response.text
+                raise RuntimeError(f"HTTP {response.status_code}: {detail}")
+            return response.json()
+        except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
+            last_err = e
+            if attempt < retries - 1:
+                import time
+                time.sleep(2 ** attempt)  # 1s, 2s, 4s backoff
+            continue
+        except RuntimeError:
+            raise
+    raise RuntimeError(f"Failed after {retries} attempts: {last_err}")
 
 
 def extract_message_content(response_json):
