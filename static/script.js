@@ -106,6 +106,24 @@ function fileToDataURL(file) {
   });
 }
 
+async function safeFetchJson(url, options = {}) {
+  const res = await fetch(url, options);
+  const text = await res.text();
+
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    throw new Error(`Server returned non-JSON response:\n${text.slice(0, 300)}`);
+  }
+
+  if (!res.ok) {
+    throw new Error(data.error || `Request failed with status ${res.status}`);
+  }
+
+  return data;
+}
+
 apiSettingsBtn.addEventListener("click", openApiModal);
 
 apiModal.addEventListener("click", (e) => {
@@ -125,22 +143,17 @@ testApiBtn.addEventListener("click", async () => {
 
   setApiModalStatus("Testing API key...");
   try {
-    const res = await fetch("/api/test-key", {
+    const json = await safeFetchJson("/api/test-key", {
       method: "POST",
       headers: {"Content-Type": "application/json"},
       body: JSON.stringify({ api_key: key })
     });
-    const json = await res.json();
-    if (!json.ok) {
-      setApiModalStatus("API key test failed");
-      setStatus("API key test failed");
-      return;
-    }
+
     setApiModalStatus("API key test passed");
-    setStatus("API key is valid and ready to use.");
-  } catch {
+    setStatus(json.message || "API key is valid and ready to use.");
+  } catch (err) {
     setApiModalStatus("API key test failed");
-    setStatus("Network error while testing API key");
+    setStatus(err.message || "API key test failed");
   }
 });
 
@@ -221,20 +234,11 @@ generateArticleBtn.addEventListener("click", async () => {
   setStatus("Generating SEO output...");
 
   try {
-    const res = await fetch("/api/process-article", {
+    const json = await safeFetchJson("/api/process-article", {
       method: "POST",
       headers: {"Content-Type": "application/json"},
       body: JSON.stringify(payload)
     });
-    const json = await res.json();
-
-    if (!json.ok) {
-      articleData = null;
-      clearArticleHiddenFields();
-      articleOutputText.value = json.error || "Something went wrong.";
-      setStatus("Article process failed");
-      return;
-    }
 
     articleData = json.data;
     if (json.data.imported_article_text) {
@@ -245,8 +249,8 @@ generateArticleBtn.addEventListener("click", async () => {
   } catch (err) {
     articleData = null;
     clearArticleHiddenFields();
-    articleOutputText.value = String(err);
-    setStatus("Network error while processing article");
+    articleOutputText.value = err.message || "Something went wrong.";
+    setStatus(err.message || "Article process failed");
   } finally {
     generateArticleBtn.disabled = false;
     generateArticleBtn.textContent = "Generate News Format";
@@ -338,16 +342,10 @@ processImageBtn.addEventListener("click", async () => {
   formData.append("blur_radius", blurRange.value);
 
   try {
-    const res = await fetch("/api/process-image", {
+    const json = await safeFetchJson("/api/process-image", {
       method: "POST",
       body: formData
     });
-    const json = await res.json();
-
-    if (!json.ok) {
-      setStatus(json.error || "Image SEO failed");
-      return;
-    }
 
     imageData = json.data;
     altTextOutput.value = imageData.alt_text || "";
@@ -360,8 +358,8 @@ processImageBtn.addEventListener("click", async () => {
     }
 
     setStatus("Generated image SEO fields");
-  } catch {
-    setStatus("Network error while generating image SEO");
+  } catch (err) {
+    setStatus(err.message || "Image SEO failed");
   } finally {
     processImageBtn.disabled = false;
     processImageBtn.textContent = "Generate Image SEO";
@@ -400,7 +398,8 @@ exportImageBtn.addEventListener("click", async () => {
     });
 
     if (!res.ok) {
-      setStatus("Export failed");
+      const text = await res.text();
+      setStatus(`Export failed: ${text.slice(0, 120)}`);
       return;
     }
 
