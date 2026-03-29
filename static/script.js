@@ -612,6 +612,12 @@ async function generateSeo(){
 
   try{
     const r=await fetch("/api/generate-image-seo",{method:"POST",body:fd});
+    const ct=r.headers.get("content-type")||"";
+    if(!ct.includes("application/json")){
+      const txt=await r.text();
+      setStatus("Server error: "+(r.status===502||r.status===504?"Request timeout - try smaller image":r.status+" "+r.statusText));
+      return;
+    }
     const d=await r.json();
     if(!d.ok){setStatus("Image SEO generation failed: "+(d.error||""));return;}
     // apply_result
