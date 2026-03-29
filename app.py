@@ -4,10 +4,20 @@ import io
 import html
 import json
 import base64
+import traceback
+from typing import Optional
+
 import requests
-from PIL import Image, ImageEnhance, ImageFilter
 from flask import Flask, render_template, request, jsonify, send_file
 from bs4 import BeautifulSoup
+
+# Safe imports
+try:
+    from PIL import Image, ImageEnhance, ImageFilter
+except Exception:
+    Image = None
+    ImageEnhance = None
+    ImageFilter = None
 
 try:
     import trafilatura
@@ -21,6 +31,19 @@ ARTICLE_MODEL = os.getenv("ARTICLE_MODEL", "Qwen/Qwen3.5-9B")
 VISION_MODEL = os.getenv("VISION_MODEL", "moonshotai/Kimi-K2.5")
 
 
+# -----------------------------
+# Global error handler
+# -----------------------------
+@app.errorhandler(Exception)
+def handle_exception(e):
+    print("UNHANDLED ERROR:", str(e))
+    traceback.print_exc()
+    return jsonify({"ok": False, "error": str(e)}), 500
+
+
+# -----------------------------
+# Helpers
+# -----------------------------
 def together_headers(api_key: str):
     return {
         "Authorization": f"Bearer {api_key}",
@@ -108,6 +131,12 @@ def trim_at_word_boundary(text: str, limit: int) -> str:
 
 def esc(value):
     return html.escape(str(value), quote=True)
+
+
+def sanitize_text(value: str, limit: int):
+    value = normalize_space(value or "")
+    value = value.replace("featured image", "").replace("Featured Image", "")
+    return trim_at_word_boundary(value, limit)
 
 
 # -----------------------------
@@ -796,12 +825,6 @@ def process_article_text(article_text, api_key=""):
 # -----------------------------
 # Image helpers
 # -----------------------------
-def sanitize_text(value: str, limit: int):
-    value = normalize_space(value or "")
-    value = value.replace("featured image", "").replace("Featured Image", "")
-    return trim_at_word_boundary(value, limit)
-
-
 def optimize_image_bytes(
     image_bytes: bytes,
     max_kb: int = 100,
@@ -809,15 +832,18 @@ def optimize_image_bytes(
     sharpness=1.0,
     blur_radius=0.0,
 ):
+    if Image is None:
+        raise RuntimeError("Pillow is not installed on the server.")
+
     image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
 
-    if abs(brightness - 1.0) > 0.001:
+    if abs(brightness - 1.0) > 0.001 and ImageEnhance is not None:
         image = ImageEnhance.Brightness(image).enhance(brightness)
 
-    if abs(sharpness - 1.0) > 0.001:
+    if abs(sharpness - 1.0) > 0.001 and ImageEnhance is not None:
         image = ImageEnhance.Sharpness(image).enhance(sharpness)
 
-    if blur_radius > 0:
+    if blur_radius > 0 and ImageFilter is not None:
         image = image.filter(ImageFilter.GaussianBlur(radius=blur_radius))
 
     quality = 95
@@ -899,13 +925,11 @@ Focus keyword / scene notes: {scene_text or 'image SEO'}
         image_title = sanitize_text(data.get("img_title", ""), 80)
         caption = sanitize_text(data.get("caption", ""), 180)
 
-        if not alt_text and not image_title and not caption:
-            return heuristic_image_fields(scene_text)
-
+        fallback = heuristic_image_fields(scene_text)
         return {
-            "alt_text": alt_text or heuristic_image_fields(scene_text)["alt_text"],
-            "image_title": image_title or heuristic_image_fields(scene_text)["image_title"],
-            "caption": caption or heuristic_image_fields(scene_text)["caption"],
+            "alt_text": alt_text or fallback["alt_text"],
+            "image_title": image_title or fallback["image_title"],
+            "caption": caption or fallback["caption"],
         }
     except Exception:
         return heuristic_image_fields(scene_text)
@@ -954,7 +978,6 @@ def api_process_article():
         result = process_article_text(article_text, api_key)
         result["imported_article_text"] = article_text
         return jsonify({"ok": True, "data": result})
-
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 400
 
@@ -1019,5 +1042,5 @@ def api_download_image():
 
 
 if __name__ == "__main__":
-    port = int(os.getenv("PORT", "5000"))
+    port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=False)
