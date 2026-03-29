@@ -14,7 +14,8 @@ app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024
 
 TOGETHER_BASE_URL = "https://api.together.xyz/v1"
 ARTICLE_MODEL = "Qwen/Qwen3.5-9B"
-VISION_MODEL = "meta-llama/Llama-3.2-11B-Vision-Instruct-Turbo"
+VISION_MODEL = "moonshotai/Kimi-K2.5"
+VISION_FALLBACK_MODEL = "Qwen/Qwen3-VL-8B-Instruct"
 
 
 def together_headers(api_key):
@@ -717,33 +718,46 @@ def generate_image_seo():
 
     try:
         prompt = make_prompt(keyword)
-        response = together_chat_completion(
-            api_key=api_key,
-            model=VISION_MODEL,
-            messages=[{
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": prompt},
-                    {"type": "image_url", "image_url": {"url": image_data_url}},
-                ],
-            }],
-            temperature=0.2,
-            timeout=90,
-        )
-        raw_text = extract_message_content(response)
-        try:
-            img_data = json.loads(raw_text)
-        except Exception:
-            cleaned = raw_text.replace("```json", "").replace("```", "").strip()
-            match = re.search(r"\{.*\}", cleaned, re.DOTALL)
-            img_data = json.loads(match.group(0) if match else cleaned)
-        return jsonify({
-            "ok": True,
-            "alt_text": sanitize_text(img_data.get("alt_text", ""), 60),
-            "img_title": sanitize_text(img_data.get("img_title", ""), 80),
-            "caption": sanitize_text(img_data.get("caption", ""), 180),
-            "ai": True,
-        })
+        last_error = None
+        for model_name in [VISION_MODEL, VISION_FALLBACK_MODEL]:
+            try:
+                response = together_chat_completion(
+                    api_key=api_key,
+                    model=model_name,
+                    messages=[{
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": prompt},
+                            {"type": "image_url", "image_url": {"url": image_data_url}},
+                        ],
+                    }],
+                    temperature=0.6,
+                    timeout=90,
+                )
+                raw_text = extract_message_content(response)
+                try:
+                    img_data = json.loads(raw_text)
+                except Exception:
+                    cleaned = raw_text.replace("```json", "").replace("```", "").strip()
+                    match = re.search(r"\{.*\}", cleaned, re.DOTALL)
+                    img_data = json.loads(match.group(0) if match else cleaned)
+                alt_text = sanitize_text(img_data.get("alt_text", ""), 60)
+                img_title = sanitize_text(img_data.get("img_title", ""), 80)
+                caption = sanitize_text(img_data.get("caption", ""), 180)
+                if not alt_text or not img_title or not caption:
+                    raise ValueError("Incomplete SEO fields from model")
+                return jsonify({
+                    "ok": True,
+                    "alt_text": alt_text,
+                    "img_title": img_title,
+                    "caption": caption,
+                    "ai": True,
+                    "model": model_name,
+                })
+            except Exception as model_error:
+                last_error = model_error
+                continue
+        raise RuntimeError(str(last_error) if last_error else "All models failed")
     except Exception as e:
         base = sanitize_text(keyword or "image seo", 60)
         base_title = base.title() if base else "Image"
