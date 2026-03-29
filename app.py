@@ -13,7 +13,7 @@ app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024
 
 TOGETHER_BASE_URL = "https://api.together.xyz/v1"
-ARTICLE_MODEL = "Qwen/Qwen3.5-9B"
+ARTICLE_MODEL = "Qwen/Qwen2.5-7B-Instruct-Turbo"
 VISION_MODEL = "moonshotai/Kimi-K2.5"
 VISION_FALLBACK_MODEL = "Qwen/Qwen3-VL-8B-Instruct"
 
@@ -599,47 +599,57 @@ def process_article():
         "wp_html": wp_html,
     }
 
-    # AI SEO (optional)
-    if api_key:
-        try:
-            prompt_text = build_seo_source_text(h1, intro, structure)
-            system_prompt = (
-                "You are an SEO editor for WordPress news articles. "
-                "Return only valid JSON with keys focus_keyphrase, seo_title, meta_description. "
-                "Choose a focus keyphrase of 2 to 5 words, an SEO title under 60 characters, "
-                "and a meta description under 160 characters. Make them engaging, factual, keyword-focused, "
-                "and suitable for Rank Math or Yoast style WordPress SEO."
-            )
-            user_prompt = (
-                "Article content:\n" + prompt_text + "\n\n"
-                "Return JSON only like:\n"
-                '{"focus_keyphrase":"...","seo_title":"...","meta_description":"..."}'
-            )
-            response = together_chat_completion(
-                api_key=api_key,
-                model=ARTICLE_MODEL,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt},
-                ],
-                temperature=0.3,
-                timeout=20,
-            )
-            content = extract_message_content(response)
-            match = re.search(r"\{.*\}", content, re.DOTALL)
-            if match:
-                ai_data = json.loads(match.group(0))
-                if ai_data.get("focus_keyphrase"):
-                    result["focus_keyphrase"] = trim_at_word_boundary(normalize_space(ai_data["focus_keyphrase"]), 80)
-                if ai_data.get("seo_title"):
-                    result["seo_title"] = trim_at_word_boundary(normalize_space(ai_data["seo_title"]), 60)
-                if ai_data.get("meta_description"):
-                    result["meta_description"] = trim_at_word_boundary(normalize_space(ai_data["meta_description"]), 160)
-                result["ai_seo"] = True
-        except Exception:
-            pass
-
     return jsonify(result)
+
+
+@app.route("/api/generate-ai-seo", methods=["POST"])
+def generate_ai_seo():
+    data = request.json or {}
+    api_key = (data.get("api_key") or "").strip()
+    h1 = (data.get("h1") or "").strip()
+    intro = (data.get("intro") or "").strip()
+    structure = data.get("structure") or []
+
+    if not api_key:
+        return jsonify({"ok": False, "error": "No API key"}), 400
+
+    try:
+        prompt_text = build_seo_source_text(h1, intro, structure)
+        system_prompt = (
+            "You are an SEO editor for WordPress news articles. "
+            "Return only valid JSON with keys focus_keyphrase, seo_title, meta_description. "
+            "Choose a focus keyphrase of 2 to 5 words, an SEO title under 60 characters, "
+            "and a meta description under 160 characters. Make them engaging, factual, keyword-focused, "
+            "and suitable for Rank Math or Yoast style WordPress SEO."
+        )
+        user_prompt = (
+            "Article content:\n" + prompt_text + "\n\n"
+            "Return JSON only like:\n"
+            '{"focus_keyphrase":"...","seo_title":"...","meta_description":"..."}\'
+        )
+        response = together_chat_completion(
+            api_key=api_key,
+            model=ARTICLE_MODEL,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            temperature=0.3,
+            timeout=45,
+        )
+        content = extract_message_content(response)
+        match = re.search(r"\{.*\}", content, re.DOTALL)
+        if not match:
+            return jsonify({"ok": False, "error": "No JSON in response"}), 400
+        ai_data = json.loads(match.group(0))
+        return jsonify({
+            "ok": True,
+            "focus_keyphrase": trim_at_word_boundary(normalize_space(ai_data.get("focus_keyphrase", "")), 80),
+            "seo_title": trim_at_word_boundary(normalize_space(ai_data.get("seo_title", "")), 60),
+            "meta_description": trim_at_word_boundary(normalize_space(ai_data.get("meta_description", "")), 160),
+        })
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
 
 
 @app.route("/api/fetch-url", methods=["POST"])
