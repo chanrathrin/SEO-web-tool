@@ -674,6 +674,21 @@ def generate_image_seo():
         ext = "jpeg"
     if ext not in ["jpeg", "png", "webp", "gif"]:
         ext = "jpeg"
+
+    # Resize image if >1MB to avoid timeout on Render free tier
+    try:
+        from PIL import Image as PILImage
+        import io as _io
+        if len(raw) > 1_000_000:
+            img_pil = PILImage.open(_io.BytesIO(raw)).convert("RGB")
+            img_pil.thumbnail((1024, 1024), PILImage.LANCZOS)
+            buf = _io.BytesIO()
+            img_pil.save(buf, format="JPEG", quality=85)
+            raw = buf.getvalue()
+            ext = "jpeg"
+    except Exception:
+        pass
+
     b64 = base64.b64encode(raw).decode("utf-8")
     image_data_url = f"data:image/{ext};base64,{b64}"
 
