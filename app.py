@@ -726,6 +726,7 @@ def generate_image_seo():
             "img_title": sanitize_text(base_title, 80) or "Optimized Image",
             "caption": sanitize_text(f"{base_title} image for WordPress SEO.", 180),
             "ai": False,
+            "ai_error": str(e),  # ← បន្ថែម error detail ដើម្បី debug
         })
 
 
