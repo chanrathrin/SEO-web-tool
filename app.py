@@ -14,7 +14,7 @@ app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024
 
 TOGETHER_BASE_URL = "https://api.together.xyz/v1"
 ARTICLE_MODEL = "Qwen/Qwen3.5-9B"
-VISION_MODEL = "meta-llama/Llama-3.2-11B-Vision-Instruct-Turbo"
+VISION_MODEL = "meta-llama/Llama-3.2-90B-Vision-Instruct-Turbo"
 
 
 def together_headers(api_key):
