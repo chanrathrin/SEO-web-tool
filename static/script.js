@@ -618,7 +618,7 @@ async function generateSeo(){
     document.getElementById("alt-text").value     =d.alt_text||"";
     document.getElementById("img-title").value    =d.img_title||"";
     document.getElementById("caption-text").value =d.caption||"";
-    setStatus(d.ai?"Image SEO generated successfully":"Generated simple image SEO without API");
+    if(d.ai){setStatus("Image SEO generated successfully");}else{const reason=d.ai_error?" ("+d.ai_error+")":"";setStatus("Generated simple image SEO without API"+reason);}
   }catch(e){setStatus("Error: "+e.message);}
 }
 
