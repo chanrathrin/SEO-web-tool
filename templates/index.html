@@ -1,234 +1,87 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Summary AI V8</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1.0">
+  <title>SEO Tool + Together AI</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
-  <div class="app-shell">
-    <header class="top-row">
-      <div class="brand-wrap">
-        <div class="brand-title">Summary AI V8</div>
-        <div class="brand-subtitle">V8 cleaner UI, smarter headings, better export</div>
-      </div>
-      <div class="status-wrap">
-        <span id="statusBar">Ready</span>
-      </div>
-    </header>
+  <div class="app-window">
+    <div class="outer-shell">
+      <div class="top-actions">
+        <div class="api-info-wrap">
+          <div class="api-info" id="apiInfo">API: not configured</div>
+        </div>
 
-    <section class="quick-tools card">
-      <div class="section-title">Quick Actions</div>
+        <div class="top-right">
+          <input id="apiKey" class="api-key-input" type="password" placeholder="Paste Together API key here">
+        </div>
+      </div>
 
-      <div class="quick-row">
-        <div class="quick-group quick-group-main">
-          <div class="quick-group-title">Main Actions</div>
-          <div class="toolbar wrap compact quick-toolbar">
-            <button class="btn btn-green" id="generateBtn">Generate News Format</button>
-            <button class="btn btn-red" id="clearInputBtn">Clear Input</button>
-            <button class="btn btn-blue" id="copyWpHtmlBtn">Copy WP HTML</button>
-            <button class="btn btn-slate" id="copyAllOutputBtn">Copy All Output</button>
-            <button class="btn btn-red" id="clearOutputBtn">Clear Output</button>
+      <div class="main-scroll">
+        <div class="section-title">All in One Tools</div>
+
+        <section class="article-tool">
+          <div class="article-header">
+            <h1>Article SEO + WordPress Tool</h1>
+            <p>Generate clean article structure and WordPress-ready HTML.</p>
           </div>
-        </div>
 
-        <div class="quick-group quick-group-seo">
-          <div class="quick-group-title">SEO Fields</div>
-          <div class="toolbar wrap compact quick-toolbar">
-            <button class="btn btn-indigo" id="quickCopyFocusKeyphraseBtn">Copy Focus Keyphrase</button>
-            <button class="btn btn-violet" id="quickCopySeoTitleBtn">Copy SEO Title</button>
-            <button class="btn btn-cyan" id="quickCopyMetaDescriptionBtn">Copy Meta Description</button>
-          </div>
-        </div>
-      </div>
+          <div class="article-content-grid">
+            <div class="panel panel-left">
+              <div class="panel-title">Input Article</div>
+              <div class="panel-subtitle">Paste news link or paste full article text</div>
 
-      <div class="quick-row">
-        <div class="quick-group quick-group-image">
-          <div class="quick-group-title">Featured Image SEO</div>
-          <div class="toolbar wrap compact quick-toolbar">
-            <button class="btn btn-emerald" id="quickCopyAltTextBtn">Copy Alt Text</button>
-            <button class="btn btn-amber" id="quickCopyImgTitleBtn">Copy Img Title</button>
-            <button class="btn btn-rose" id="quickCopyCaptionBtn">Copy Caption</button>
-          </div>
-        </div>
-      </div>
-    </section>
+              <input
+                id="articleUrl"
+                class="field-input"
+                type="text"
+                placeholder="Paste news URL here..."
+                autocomplete="off"
+              >
 
-    <section class="main-grid">
-      <div class="card panel input-panel">
-        <div class="panel-head">
-          <div class="panel-title">Input Article</div>
-        </div>
-        <textarea id="articleInput" placeholder="Paste your article here.">Paste your article here.</textarea>
-      </div>
-
-      <div class="card panel output-panel">
-        <div class="panel-head">
-          <div class="panel-title">SEO Output</div>
-        </div>
-        <div id="seoPreview" class="preview-box">
-          <p class="placeholder-text">Formatted SEO output will appear here.</p>
-        </div>
-      </div>
-    </section>
-
-    <section class="secondary-grid">
-      <div class="card panel">
-        <div class="panel-head">
-          <div class="panel-title">Output Actions</div>
-        </div>
-
-        <div class="copy-grid">
-          <button class="btn btn-slate copy-section-btn" data-key="h1_copy">H1 Title</button>
-          <button class="btn btn-slate copy-section-btn" data-key="intro_copy">Introduction</button>
-          <button class="btn btn-slate copy-section-btn" data-key="headings_copy">Section Headings</button>
-          <button class="btn btn-slate copy-section-btn" data-key="body_copy">Main Content Body</button>
-          <button class="btn btn-slate copy-section-btn" data-key="focus_keyphrase_copy">Focus Keyphrase</button>
-          <button class="btn btn-slate copy-section-btn" data-key="seo_title_copy">SEO Title</button>
-          <button class="btn btn-slate copy-section-btn" data-key="meta_description_copy">Meta Description</button>
-          <button class="btn btn-slate copy-section-btn" data-key="slug_copy">Slug (URL)</button>
-          <button class="btn btn-slate copy-section-btn" data-key="short_summary_copy">Short Summary</button>
-          <button class="btn btn-slate copy-section-btn" data-key="alt_text_copy">Alt Text</button>
-          <button class="btn btn-slate copy-section-btn" data-key="img_title_copy">Img Title</button>
-          <button class="btn btn-slate copy-section-btn" data-key="caption_copy">Caption</button>
-        </div>
-      </div>
-
-      <div class="card panel">
-        <div class="panel-head">
-          <div class="panel-title">SEO Fields</div>
-        </div>
-
-        <div class="field-grid">
-          <label>
-            <span>Focus Keyphrase</span>
-            <input type="text" id="focusKeyphrase">
-          </label>
-
-          <label>
-            <span>SEO Title</span>
-            <input type="text" id="seoTitle">
-          </label>
-
-          <label class="full">
-            <span>Meta Description</span>
-            <textarea id="metaDescription" rows="3"></textarea>
-          </label>
-
-          <label>
-            <span>Slug (URL)</span>
-            <input type="text" id="slug">
-          </label>
-
-          <label class="full">
-            <span>Short Summary</span>
-            <textarea id="shortSummary" rows="3"></textarea>
-          </label>
-        </div>
-
-        <div class="toolbar wrap compact top-gap">
-          <button class="btn btn-slate copy-field-btn" data-target="focusKeyphrase">Copy Focus Keyphrase</button>
-          <button class="btn btn-slate copy-field-btn" data-target="seoTitle">Copy SEO Title</button>
-          <button class="btn btn-slate copy-field-btn" data-target="metaDescription">Copy Meta Description</button>
-          <button class="btn btn-slate copy-field-btn" data-target="slug">Copy Slug</button>
-          <button class="btn btn-slate copy-field-btn" data-target="shortSummary">Copy Short Summary</button>
-        </div>
-
-        <div class="sub-block">
-          <div class="sub-title">SEO Title Options</div>
-          <textarea id="titleOptions" rows="6" readonly></textarea>
-        </div>
-
-        <div class="sub-block">
-          <div class="sub-title">Meta + SEO Fields</div>
-          <textarea id="metaOptions" rows="8" readonly></textarea>
-        </div>
-      </div>
-    </section>
-
-    <section class="secondary-grid">
-      <div class="card panel">
-        <div class="panel-head">
-          <div class="panel-title">Featured Image</div>
-        </div>
-
-        <div class="toolbar wrap compact">
-          <label class="btn btn-blue file-btn">
-            Import Featured Image
-            <input type="file" id="imageInput" accept="image/*" hidden>
-          </label>
-          <button class="btn btn-slate preset-btn" data-width="1200" data-height="366">1200x366</button>
-          <button class="btn btn-slate preset-btn" data-width="800" data-height="445">800x445</button>
-          <button class="btn btn-slate preset-btn" data-width="1200" data-height="630">1200x630</button>
-          <button class="btn btn-green" id="applyCropBtn">Apply Crop</button>
-          <button class="btn btn-orange" id="useCroppedInSeoBtn">Use Crop In SEO Output</button>
-          <button class="btn btn-pink" id="exportUnder100Btn">Export &lt;100KB</button>
-        </div>
-
-        <div class="crop-grid">
-          <div class="inner-panel">
-            <div class="inner-title">Canvas</div>
-            <div class="canvas-wrap" id="canvasWrap">
-              <img id="sourceImage" alt="">
-              <div id="cropBox">
-                <span class="resize-handle br"></span>
+              <div class="tools-card">
+                <div class="tools-row">
+                  <button id="generateBtn" class="app-btn yellow-btn">Generate News Format</button>
+                  <button id="clearBtn" class="app-btn red-btn">Clear Input</button>
+                  <button id="copyHtmlBtn" class="app-btn green-btn">Copy WP HTML</button>
+                </div>
               </div>
-              <div id="emptyCanvasText">No featured image yet</div>
+
+              <textarea id="articleText" class="editor editor-left">Paste your article here...</textarea>
+            </div>
+
+            <div class="panel panel-right">
+              <div class="panel-title">SEO Output</div>
+
+              <div class="quick-card">
+                <div class="quick-title">Quick Copy Sections</div>
+                <div class="quick-subtitle">Focus Keyphrase / SEO Title / Meta Description</div>
+                <div class="quick-row">
+                  <button class="app-btn cyan-btn" data-copy="focus_keyphrase">Focus Keyphrase</button>
+                  <button class="app-btn purple-btn" data-copy="seo_title">SEO Title</button>
+                  <button class="app-btn yellow-btn" data-copy="meta_description">Meta Description</button>
+                </div>
+              </div>
+
+              <textarea id="outputText" class="editor editor-right" readonly>Formatted SEO output will appear here.</textarea>
+
+              <div class="hidden-fields" aria-hidden="true">
+                <input id="focusKeyphrase" type="text" readonly>
+                <input id="seoTitle" type="text" readonly>
+                <textarea id="metaDescription" readonly></textarea>
+                <input id="slug" type="text" readonly>
+                <textarea id="shortSummary" readonly></textarea>
+                <textarea id="wordpressHtml" readonly></textarea>
+              </div>
             </div>
           </div>
-
-          <div class="inner-panel">
-            <div class="inner-title">Preview</div>
-            <img id="cropPreview" alt="">
-            <div id="previewMeta" class="preview-meta">Preset output size will appear here</div>
-          </div>
-        </div>
+        </section>
       </div>
 
-      <div class="card panel">
-        <div class="panel-head">
-          <div class="panel-title">Featured Image SEO</div>
-        </div>
-
-        <div class="toolbar wrap compact">
-          <button class="btn btn-green" id="generateImageSeoBtn">Generate Image SEO</button>
-          <button class="btn btn-slate" id="copyImageSeoBtn">Copy All Image SEO</button>
-          <button class="btn btn-red" id="clearImageSeoBtn">Clear Image SEO</button>
-        </div>
-
-        <div class="field-grid">
-          <label class="full">
-            <span>Scene Notes</span>
-            <input type="text" id="sceneNotes" placeholder="Optional scene notes">
-          </label>
-
-          <label class="full">
-            <span>Alt Text</span>
-            <textarea id="altText" rows="3"></textarea>
-          </label>
-
-          <label>
-            <span>Img Title</span>
-            <input type="text" id="imgTitle">
-          </label>
-
-          <label>
-            <span>Caption</span>
-            <textarea id="caption" rows="3"></textarea>
-          </label>
-        </div>
-      </div>
-    </section>
-
-    <section class="card panel wp-panel">
-      <div class="panel-head">
-        <div class="panel-title">WordPress HTML Output</div>
-      </div>
-      <textarea id="wpHtmlOutput" class="code-output" readonly></textarea>
-    </section>
-
-    <div id="toast" class="toast"></div>
+      <div class="status-bar" id="statusBar">Ready</div>
+    </div>
   </div>
 
   <script src="{{ url_for('static', filename='script.js') }}"></script>
