@@ -14,7 +14,7 @@ app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024
 
 TOGETHER_BASE_URL = "https://api.together.xyz/v1"
 ARTICLE_MODEL = "Qwen/Qwen3.5-9B"
-VISION_MODEL = "moonshotai/Kimi-K2.5"
+VISION_MODEL = "meta-llama/Llama-3.2-90B-Vision-Instruct-Turbo"
 
 
 def together_headers(api_key):
@@ -731,4 +731,6 @@ def generate_image_seo():
 
 
 if __name__ == "__main__":
-    app.run(debug=True, host="0.0.0.0", port=5000)
+    import os
+    port = int(os.environ.get("PORT", 5000))
+    app.run(debug=False, host="0.0.0.0", port=port)
