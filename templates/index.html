@@ -112,7 +112,7 @@
         <section class="tool-card image-tool">
           <div class="article-header">
             <h1>Image SEO + Crop Tool</h1>
-            <p>Import, optimize, and generate WordPress-ready image SEO fields.</p>
+            <p>Import, crop, optimize, and generate WordPress-ready image SEO fields.</p>
           </div>
 
           <div class="image-grid">
@@ -131,6 +131,47 @@
                 </div>
                 <div class="tools-row">
                   <button id="exportImageBtn" class="app-btn green-btn">Export &lt;100KB</button>
+                </div>
+              </div>
+
+              <div class="tools-card crop-tools-card">
+                <div class="quick-title">Crop Tools</div>
+                <div class="quick-subtitle">Preset crop sizes, ratio lock, and zoom control</div>
+
+                <div class="tools-row">
+                  <button id="preset1200x366Btn" class="app-btn orange-btn" type="button">Preset 1200x366</button>
+                  <button id="preset800x445Btn" class="app-btn orange-btn" type="button">Preset 800x445</button>
+                </div>
+
+                <div class="tools-row tools-row-slim">
+                  <label class="check-label">
+                    <input id="lockRatioCheckbox" type="checkbox" checked>
+                    <span>Lock Ratio Safe</span>
+                  </label>
+                </div>
+
+                <div class="slider-group zone-zoom-group">
+                  <label for="zoneZoomRange">Zone Zoom</label>
+                  <input id="zoneZoomRange" type="range" min="1" max="3" step="0.1" value="1">
+                </div>
+
+                <div class="crop-coords-grid">
+                  <div class="field-box compact-box">
+                    <label for="cropX">Crop X</label>
+                    <input id="cropX" class="field-input no-margin" type="number" min="0" value="0">
+                  </div>
+                  <div class="field-box compact-box">
+                    <label for="cropY">Crop Y</label>
+                    <input id="cropY" class="field-input no-margin" type="number" min="0" value="0">
+                  </div>
+                  <div class="field-box compact-box">
+                    <label for="cropWidth">Crop Width</label>
+                    <input id="cropWidth" class="field-input no-margin" type="number" min="1" value="1200">
+                  </div>
+                  <div class="field-box compact-box">
+                    <label for="cropHeight">Crop Height</label>
+                    <input id="cropHeight" class="field-input no-margin" type="number" min="1" value="366">
+                  </div>
                 </div>
               </div>
 
