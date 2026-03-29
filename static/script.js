@@ -47,6 +47,15 @@ const brightnessRange = document.getElementById("brightnessRange");
 const sharpnessRange = document.getElementById("sharpnessRange");
 const blurRange = document.getElementById("blurRange");
 
+const preset1200x366Btn = document.getElementById("preset1200x366Btn");
+const preset800x445Btn = document.getElementById("preset800x445Btn");
+const lockRatioCheckbox = document.getElementById("lockRatioCheckbox");
+const zoneZoomRange = document.getElementById("zoneZoomRange");
+const cropX = document.getElementById("cropX");
+const cropY = document.getElementById("cropY");
+const cropWidth = document.getElementById("cropWidth");
+const cropHeight = document.getElementById("cropHeight");
+
 function setStatus(message) {
   statusBar.textContent = message || "Ready";
 }
@@ -122,6 +131,42 @@ async function safeFetchJson(url, options = {}) {
   }
 
   return data;
+}
+
+function activatePreset(name) {
+  preset1200x366Btn.dataset.active = name === "1200x366" ? "1" : "0";
+  preset800x445Btn.dataset.active = name === "800x445" ? "1" : "0";
+}
+
+function setCropPreset(w, h) {
+  cropWidth.value = String(w);
+  cropHeight.value = String(h);
+  cropX.value = "0";
+  cropY.value = "0";
+  setStatus(`Crop preset set: ${w}x${h}`);
+}
+
+function applyLockedRatio(changedField) {
+  if (!lockRatioCheckbox.checked) return;
+
+  const w = parseFloat(cropWidth.value || "1");
+  const h = parseFloat(cropHeight.value || "1");
+
+  if (changedField === "width") {
+    if (preset1200x366Btn.dataset.active === "1") {
+      cropHeight.value = String(Math.max(1, Math.round((w * 366) / 1200)));
+    } else if (preset800x445Btn.dataset.active === "1") {
+      cropHeight.value = String(Math.max(1, Math.round((w * 445) / 800)));
+    }
+  }
+
+  if (changedField === "height") {
+    if (preset1200x366Btn.dataset.active === "1") {
+      cropWidth.value = String(Math.max(1, Math.round((h * 1200) / 366)));
+    } else if (preset800x445Btn.dataset.active === "1") {
+      cropWidth.value = String(Math.max(1, Math.round((h * 800) / 445)));
+    }
+  }
 }
 
 apiSettingsBtn.addEventListener("click", openApiModal);
@@ -319,6 +364,8 @@ imageFileInput.addEventListener("change", async (e) => {
   imagePreview.classList.remove("hidden");
   imagePreviewPlaceholder.classList.add("hidden");
   cropInfoLabel.textContent = `${file.name} loaded`;
+  imagePreview.style.transform = `scale(${zoneZoomRange.value || "1"})`;
+  imagePreview.style.transformOrigin = "center center";
   setStatus("Imported featured image");
 });
 
@@ -340,6 +387,12 @@ processImageBtn.addEventListener("click", async () => {
   formData.append("brightness", brightnessRange.value);
   formData.append("sharpness", sharpnessRange.value);
   formData.append("blur_radius", blurRange.value);
+  formData.append("crop", JSON.stringify({
+    x: parseInt(cropX.value || "0", 10),
+    y: parseInt(cropY.value || "0", 10),
+    width: parseInt(cropWidth.value || "1200", 10),
+    height: parseInt(cropHeight.value || "366", 10)
+  }));
 
   try {
     const json = await safeFetchJson("/api/process-image", {
@@ -355,6 +408,8 @@ processImageBtn.addEventListener("click", async () => {
 
     if (imageData.optimized_base64) {
       imagePreview.src = `data:image/jpeg;base64,${imageData.optimized_base64}`;
+      imagePreview.style.transform = `scale(${zoneZoomRange.value || "1"})`;
+      imagePreview.style.transformOrigin = "center center";
     }
 
     setStatus("Generated image SEO fields");
@@ -377,10 +432,17 @@ clearImageBtn.addEventListener("click", () => {
   brightnessRange.value = "1.0";
   sharpnessRange.value = "1.0";
   blurRange.value = "0";
+  cropX.value = "0";
+  cropY.value = "0";
+  cropWidth.value = "1200";
+  cropHeight.value = "366";
+  zoneZoomRange.value = "1";
   imagePreview.src = "";
+  imagePreview.style.transform = "scale(1)";
   imagePreview.classList.add("hidden");
   imagePreviewPlaceholder.classList.remove("hidden");
   cropInfoLabel.textContent = "No image loaded";
+  activatePreset("1200x366");
   setStatus("Cleared all image SEO fields");
 });
 
@@ -435,5 +497,26 @@ document.querySelectorAll("[data-copy-image]").forEach(btn => {
   });
 });
 
+preset1200x366Btn.addEventListener("click", () => {
+  activatePreset("1200x366");
+  setCropPreset(1200, 366);
+});
+
+preset800x445Btn.addEventListener("click", () => {
+  activatePreset("800x445");
+  setCropPreset(800, 445);
+});
+
+cropWidth.addEventListener("input", () => applyLockedRatio("width"));
+cropHeight.addEventListener("input", () => applyLockedRatio("height"));
+
+zoneZoomRange.addEventListener("input", () => {
+  const zoom = parseFloat(zoneZoomRange.value || "1");
+  imagePreview.style.transform = `scale(${zoom})`;
+  imagePreview.style.transformOrigin = "center center";
+  setStatus(`Zone Zoom: ${zoom.toFixed(1)}x`);
+});
+
+activatePreset("1200x366");
 updateApiInfo();
 setStatus("Ready");
