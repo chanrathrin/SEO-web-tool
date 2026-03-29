@@ -592,7 +592,7 @@ async function generateSeo(){
   if(!_origImg&&!_origFile){setStatus("Please upload an image first");return;}
   const kw=document.getElementById("scene-entry").value.trim()||"image SEO";
   const key=getKey();
-  setStatus("Generating image SEO with Together AI...");
+  setStatus("⏳ Generating image SEO... (may take 10-20s)");
 
   // use cropped blob or original file
   let blob=_cropBlob||_origFile;
