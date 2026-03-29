@@ -5,13 +5,11 @@ import html
 import json
 import base64
 import traceback
-from typing import Optional
 
 import requests
 from flask import Flask, render_template, request, jsonify, send_file
 from bs4 import BeautifulSoup
 
-# Safe imports
 try:
     from PIL import Image, ImageEnhance, ImageFilter
 except Exception:
@@ -31,9 +29,6 @@ ARTICLE_MODEL = os.getenv("ARTICLE_MODEL", "Qwen/Qwen3.5-9B")
 VISION_MODEL = os.getenv("VISION_MODEL", "moonshotai/Kimi-K2.5")
 
 
-# -----------------------------
-# Global error handler
-# -----------------------------
 @app.errorhandler(Exception)
 def handle_exception(e):
     print("UNHANDLED ERROR:", str(e))
@@ -41,9 +36,6 @@ def handle_exception(e):
     return jsonify({"ok": False, "error": str(e)}), 500
 
 
-# -----------------------------
-# Helpers
-# -----------------------------
 def together_headers(api_key: str):
     return {
         "Authorization": f"Bearer {api_key}",
@@ -831,11 +823,24 @@ def optimize_image_bytes(
     brightness=1.0,
     sharpness=1.0,
     blur_radius=0.0,
+    crop=None,
 ):
     if Image is None:
         raise RuntimeError("Pillow is not installed on the server.")
 
     image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+
+    if crop:
+        x = max(0, int(crop.get("x", 0)))
+        y = max(0, int(crop.get("y", 0)))
+        w = max(1, int(crop.get("width", image.width)))
+        h = max(1, int(crop.get("height", image.height)))
+
+        x2 = min(image.width, x + w)
+        y2 = min(image.height, y + h)
+
+        if x2 > x and y2 > y:
+            image = image.crop((x, y, x2, y2))
 
     if abs(brightness - 1.0) > 0.001 and ImageEnhance is not None:
         image = ImageEnhance.Brightness(image).enhance(brightness)
@@ -935,9 +940,6 @@ Focus keyword / scene notes: {scene_text or 'image SEO'}
         return heuristic_image_fields(scene_text)
 
 
-# -----------------------------
-# Routes
-# -----------------------------
 @app.route("/")
 def index():
     return render_template("index.html")
@@ -991,6 +993,14 @@ def api_process_image():
     sharpness = float(request.form.get("sharpness") or 1.0)
     blur_radius = float(request.form.get("blur_radius") or 0.0)
 
+    crop = None
+    crop_json = request.form.get("crop")
+    if crop_json:
+        try:
+            crop = json.loads(crop_json)
+        except Exception:
+            crop = None
+
     file = request.files.get("image")
     if not file:
         return jsonify({"ok": False, "error": "Please import an image first."}), 400
@@ -1003,6 +1013,7 @@ def api_process_image():
             brightness=brightness,
             sharpness=sharpness,
             blur_radius=blur_radius,
+            crop=crop,
         )
 
         image_b64 = base64.b64encode(optimized).decode("utf-8")
@@ -1042,5 +1053,5 @@ def api_download_image():
 
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
+    port = int(os.environ.get("PORT", "5000"))
     app.run(host="0.0.0.0", port=port, debug=False)
