@@ -1,10 +1,13 @@
 import os
 import re
-import json
+import io
 import html
+import json
+import base64
 import requests
+from PIL import Image, ImageEnhance, ImageFilter
+from flask import Flask, render_template, request, jsonify, send_file
 from bs4 import BeautifulSoup
-from flask import Flask, render_template, request, jsonify
 
 try:
     import trafilatura
@@ -15,6 +18,7 @@ app = Flask(__name__)
 
 TOGETHER_BASE_URL = "https://api.together.xyz/v1"
 ARTICLE_MODEL = os.getenv("ARTICLE_MODEL", "Qwen/Qwen3.5-9B")
+VISION_MODEL = os.getenv("VISION_MODEL", "moonshotai/Kimi-K2.5")
 
 
 def together_headers(api_key: str):
@@ -24,7 +28,23 @@ def together_headers(api_key: str):
     }
 
 
-def together_chat_completion(api_key: str, model: str, messages, temperature: float = 0.3, timeout: int = 45):
+def verify_together_api_key(api_key: str, timeout: int = 20):
+    response = requests.get(
+        f"{TOGETHER_BASE_URL}/models",
+        headers=together_headers(api_key),
+        timeout=timeout,
+    )
+    if response.status_code >= 400:
+        try:
+            data = response.json()
+            detail = data.get("error", {}).get("message") or data.get("message") or response.text
+        except Exception:
+            detail = response.text
+        raise RuntimeError(f"HTTP {response.status_code}: {detail}")
+    return response.json()
+
+
+def together_chat_completion(api_key: str, model: str, messages, temperature: float = 0.3, timeout: int = 60):
     payload = {
         "model": model,
         "messages": messages,
@@ -36,7 +56,6 @@ def together_chat_completion(api_key: str, model: str, messages, temperature: fl
         json=payload,
         timeout=timeout,
     )
-
     if response.status_code >= 400:
         try:
             data = response.json()
@@ -44,7 +63,6 @@ def together_chat_completion(api_key: str, model: str, messages, temperature: fl
         except Exception:
             detail = response.text
         raise RuntimeError(f"HTTP {response.status_code}: {detail}")
-
     return response.json()
 
 
@@ -88,6 +106,13 @@ def trim_at_word_boundary(text: str, limit: int) -> str:
     return cut.rstrip(" ,.-:;")
 
 
+def esc(value):
+    return html.escape(str(value), quote=True)
+
+
+# -----------------------------
+# Article helpers
+# -----------------------------
 def clean_lines(text: str):
     text = (text or "").replace("\r\n", "\n").replace("\r", "\n")
     text = re.sub(r"\u00a0", " ", text)
@@ -386,10 +411,6 @@ def make_short_summary(intro, structure):
     return trim_at_word_boundary(source, 180)
 
 
-def esc(value):
-    return html.escape(str(value), quote=True)
-
-
 def build_wordpress_html_fragment(h1, intro, structure):
     parts = []
     if h1:
@@ -408,6 +429,31 @@ def build_wordpress_html_fragment(h1, intro, structure):
         if body:
             for paragraph in [p.strip() for p in body.split("\n\n") if p.strip()]:
                 parts.append(f"<p>{esc(paragraph)}</p>")
+
+    return "\n".join(parts).strip()
+
+
+def build_output_preview(h1, intro, structure):
+    parts = []
+
+    if h1:
+        parts.extend(["H1", h1, ""])
+
+    if intro:
+        parts.extend(["Intro", intro, ""])
+
+    for sec in structure:
+        if sec.get("h2"):
+            parts.extend(["H2", sec["h2"], ""])
+
+        for sub in sec.get("subsections", []):
+            if sub.get("h3"):
+                parts.extend(["H3", sub["h3"], ""])
+
+            if sub.get("body"):
+                paragraphs = [p.strip() for p in sub["body"].split("\n\n") if p.strip()]
+                for para in paragraphs:
+                    parts.extend(["Paragraph", para, ""])
 
     return "\n".join(parts).strip()
 
@@ -711,46 +757,6 @@ def generate_ai_seo_fields(api_key, h1, intro, structure):
         return None
 
 
-def build_output_preview(h1, intro, structure):
-    parts = []
-
-    if h1:
-        parts.append("H1")
-        parts.append(h1)
-        parts.append("")
-
-    if intro:
-        parts.append("Intro")
-        parts.append(intro)
-        parts.append("")
-
-    for sec in structure:
-        if sec.get("h2"):
-            parts.append("H2")
-            parts.append(sec["h2"])
-            parts.append("")
-
-        for sub in sec.get("subsections", []):
-            if sub.get("h3"):
-                parts.append("H3")
-                parts.append(sub["h3"])
-                parts.append("")
-
-            if sub.get("body"):
-                paragraphs = [p.strip() for p in sub["body"].split("\n\n") if p.strip()]
-                if not paragraphs:
-                    parts.append("Paragraph")
-                    parts.append(sub["body"])
-                    parts.append("")
-                else:
-                    for para in paragraphs:
-                        parts.append("Paragraph")
-                        parts.append(para)
-                        parts.append("")
-
-    return "\n".join(parts).strip()
-
-
 def process_article_text(article_text, api_key=""):
     lines = clean_lines(article_text)
     lines = strip_internal_seo_lines(lines)
@@ -787,13 +793,152 @@ def process_article_text(article_text, api_key=""):
     }
 
 
+# -----------------------------
+# Image helpers
+# -----------------------------
+def sanitize_text(value: str, limit: int):
+    value = normalize_space(value or "")
+    value = value.replace("featured image", "").replace("Featured Image", "")
+    return trim_at_word_boundary(value, limit)
+
+
+def optimize_image_bytes(
+    image_bytes: bytes,
+    max_kb: int = 100,
+    brightness=1.0,
+    sharpness=1.0,
+    blur_radius=0.0,
+):
+    image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+
+    if abs(brightness - 1.0) > 0.001:
+        image = ImageEnhance.Brightness(image).enhance(brightness)
+
+    if abs(sharpness - 1.0) > 0.001:
+        image = ImageEnhance.Sharpness(image).enhance(sharpness)
+
+    if blur_radius > 0:
+        image = image.filter(ImageFilter.GaussianBlur(radius=blur_radius))
+
+    quality = 95
+    best = None
+
+    while quality >= 20:
+        out = io.BytesIO()
+        image.save(out, format="JPEG", optimize=True, quality=quality)
+        data = out.getvalue()
+        best = data
+        if len(data) <= max_kb * 1024:
+            break
+        quality -= 5
+
+    return best
+
+
+def heuristic_image_fields(keyword: str):
+    base = sanitize_text(keyword or "image seo", 60)
+    base_title = base.title() if base else "Image"
+    return {
+        "alt_text": sanitize_text(base, 60) or "Optimized image",
+        "image_title": sanitize_text(base_title, 80) or "Optimized Image",
+        "caption": sanitize_text(f"{base_title} image for WordPress SEO.", 180),
+    }
+
+
+def generate_image_seo_fields(api_key, scene_text, image_b64):
+    if not api_key:
+        return heuristic_image_fields(scene_text)
+
+    prompt = f"""
+You are an image SEO assistant.
+
+Analyze the image and return ONLY valid JSON with these exact keys:
+alt_text
+img_title
+caption
+
+Rules:
+- alt_text: max 60 characters, clear, natural
+- img_title: short and clear
+- caption: 1 natural sentence, engaging
+- never use the phrase "featured image"
+- do not mention "featured image"
+- include the keyword naturally if it fits
+- no markdown
+- no explanation
+- no extra keys
+
+Focus keyword / scene notes: {scene_text or 'image SEO'}
+"""
+
+    try:
+        response = together_chat_completion(
+            api_key=api_key,
+            model=VISION_MODEL,
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"}},
+                    ],
+                }
+            ],
+            temperature=0.2,
+            timeout=90,
+        )
+        raw_text = extract_message_content(response)
+        try:
+            data = json.loads(raw_text)
+        except Exception:
+            cleaned = raw_text.replace("```json", "").replace("```", "").strip()
+            match = re.search(r"\{.*\}", cleaned, re.DOTALL)
+            data = json.loads(match.group(0) if match else cleaned)
+
+        alt_text = sanitize_text(data.get("alt_text", ""), 60)
+        image_title = sanitize_text(data.get("img_title", ""), 80)
+        caption = sanitize_text(data.get("caption", ""), 180)
+
+        if not alt_text and not image_title and not caption:
+            return heuristic_image_fields(scene_text)
+
+        return {
+            "alt_text": alt_text or heuristic_image_fields(scene_text)["alt_text"],
+            "image_title": image_title or heuristic_image_fields(scene_text)["image_title"],
+            "caption": caption or heuristic_image_fields(scene_text)["caption"],
+        }
+    except Exception:
+        return heuristic_image_fields(scene_text)
+
+
+# -----------------------------
+# Routes
+# -----------------------------
 @app.route("/")
 def index():
     return render_template("index.html")
 
 
-@app.route("/api/process", methods=["POST"])
-def api_process():
+@app.route("/health")
+def health():
+    return {"ok": True}
+
+
+@app.route("/api/test-key", methods=["POST"])
+def api_test_key():
+    data = request.get_json(silent=True) or {}
+    api_key = (data.get("api_key") or "").strip()
+    if not api_key:
+        return jsonify({"ok": False, "error": "Please paste your API key first."}), 400
+    try:
+        verify_together_api_key(api_key)
+        return jsonify({"ok": True, "message": "API key is valid and ready to use."})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+
+
+@app.route("/api/process-article", methods=["POST"])
+def api_process_article():
     data = request.get_json(silent=True) or {}
     article_text = (data.get("article_text") or "").strip()
     article_url = (data.get("article_url") or "").strip()
@@ -814,9 +959,63 @@ def api_process():
         return jsonify({"ok": False, "error": str(e)}), 400
 
 
-@app.route("/health")
-def health():
-    return {"ok": True}
+@app.route("/api/process-image", methods=["POST"])
+def api_process_image():
+    api_key = (request.form.get("api_key") or os.getenv("TOGETHER_API_KEY", "")).strip()
+    scene_text = (request.form.get("scene_text") or "").strip()
+    max_kb = int(request.form.get("max_kb") or 100)
+    brightness = float(request.form.get("brightness") or 1.0)
+    sharpness = float(request.form.get("sharpness") or 1.0)
+    blur_radius = float(request.form.get("blur_radius") or 0.0)
+
+    file = request.files.get("image")
+    if not file:
+        return jsonify({"ok": False, "error": "Please import an image first."}), 400
+
+    try:
+        original_bytes = file.read()
+        optimized = optimize_image_bytes(
+            original_bytes,
+            max_kb=max_kb,
+            brightness=brightness,
+            sharpness=sharpness,
+            blur_radius=blur_radius,
+        )
+
+        image_b64 = base64.b64encode(optimized).decode("utf-8")
+        ai = generate_image_seo_fields(api_key, scene_text, image_b64)
+
+        return jsonify({
+            "ok": True,
+            "data": {
+                "alt_text": ai["alt_text"],
+                "image_title": ai["image_title"],
+                "caption": ai["caption"],
+                "optimized_base64": image_b64,
+                "optimized_size_kb": round(len(optimized) / 1024, 1),
+            }
+        })
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+
+
+@app.route("/api/download-image", methods=["POST"])
+def api_download_image():
+    data = request.get_json(silent=True) or {}
+    image_b64 = data.get("image_base64") or ""
+    if not image_b64:
+        return jsonify({"ok": False, "error": "No image available."}), 400
+
+    try:
+        image_bytes = base64.b64decode(image_b64)
+        return send_file(
+            io.BytesIO(image_bytes),
+            mimetype="image/jpeg",
+            as_attachment=True,
+            download_name="optimized-image.jpg",
+        )
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
 
 
 if __name__ == "__main__":
