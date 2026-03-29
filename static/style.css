@@ -363,7 +363,6 @@ body{padding:14px}
   overflow:hidden;
 }
 
-/* image tool */
 .image-preview-wrap{
   margin:0 16px 14px;
   border:1px solid var(--input-border);
@@ -473,7 +472,6 @@ body{padding:14px}
   font:500 13px "Segoe UI",Arial,sans-serif;
 }
 
-/* modal */
 .modal{
   position:fixed;
   inset:0;
