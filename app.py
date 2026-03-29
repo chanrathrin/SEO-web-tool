@@ -625,7 +625,7 @@ def generate_ai_seo():
         user_prompt = (
             "Article content:\n" + prompt_text + "\n\n"
             "Return JSON only like:\n"
-            '{"focus_keyphrase":"...","seo_title":"...","meta_description":"..."}\'
+            '{"focus_keyphrase":"...","seo_title":"...","meta_description":"..."}'
         )
         response = together_chat_completion(
             api_key=api_key,
