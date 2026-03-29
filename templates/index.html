@@ -1,1 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SEO Tool + Together AI</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
 
+<!-- ══ Status bar (bottom, like Tkinter status_label) ══ -->
+<div id="status-bar">
+  <span id="status-text">Ready</span>
+</div>
+
+<!-- ══ Outer frame ══ -->
+<div id="outer">
+
+  <!-- Top actions: API label + API Settings button -->
+  <div id="top-actions">
+    <span id="api-info-label">API: not configured</span>
+    <button class="btn btn-cyan" style="width:150px;height:38px;" onclick="openApiSettings()">API Settings</button>
+  </div>
+
+  <!-- Main scrollable -->
+  <div id="main-scroll">
+    <div class="section-title">All in One Tools</div>
+
+    <!-- ══════════════════════════════════════════════════
+         ARTICLE TOOL (ArticleToolFrame)
+    ══════════════════════════════════════════════════ -->
+    <div id="article-tool" class="panel">
+      <div class="tool-header">
+        <h2>Article SEO + WordPress Tool</h2>
+        <p>Generate clean article structure and WordPress-ready HTML.</p>
+      </div>
+      <div class="article-content">
+        <!-- Left panel -->
+        <div class="panel-inner article-left">
+          <h3>Input Article</h3>
+          <p class="sub">Paste news link or paste full article text</p>
+          <input type="text" id="url-entry" class="url-entry" placeholder="Paste news URL here...">
+          <div class="tools-card">
+            <div class="tools-row">
+              <button class="btn btn-yellow" style="width:185px;height:40px;" onclick="processArticle()">Generate News Format</button>
+              <button class="btn btn-red" style="width:130px;height:40px;" onclick="clearInput()">Clear Input</button>
+              <button class="btn btn-green" style="width:145px;height:40px;" onclick="copyWpHtml()">Copy WP HTML</button>
+            </div>
+          </div>
+          <textarea id="input-text" placeholder="Paste your article here..."></textarea>
+        </div>
+        <!-- Right panel -->
+        <div class="panel-inner article-right">
+          <h3>SEO Output</h3>
+          <div class="quick-card-inner">
+            <h4>Quick Copy Sections</h4>
+            <div class="tools-row">
+              <button class="btn btn-keyphrase" style="width:150px;height:38px;" onclick="copySection('Focus Keyphrase')">Focus Keyphrase</button>
+              <button class="btn btn-seotitle"  style="width:125px;height:38px;" onclick="copySection('SEO Title')">SEO Title</button>
+              <button class="btn btn-metadesc"  style="width:165px;height:38px;" onclick="copySection('Meta Description')">Meta Description</button>
+            </div>
+          </div>
+          <textarea id="output-text" readonly placeholder="Formatted SEO output will appear here."></textarea>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ Quick Copy row between tools (like Tkinter quick_wrap) ══ -->
+    <div id="quick-wrap">
+      <!-- Article Quick Copy -->
+      <div class="quick-card">
+        <h3>Quick Copy Sections</h3>
+        <p>Focus Keyphrase / SEO Title / Meta Description</p>
+        <div class="quick-row">
+          <button class="btn btn-keyphrase" style="width:160px;height:40px;" onclick="copySection('Focus Keyphrase')">Focus Keyphrase</button>
+          <button class="btn btn-seotitle"  style="width:145px;height:40px;" onclick="copySection('SEO Title')">SEO Title</button>
+          <button class="btn btn-metadesc"  style="width:185px;height:40px;" onclick="copySection('Meta Description')">Meta Description</button>
+        </div>
+      </div>
+      <!-- Image Quick Copy -->
+      <div class="quick-card">
+        <h3>Image Quick Copy</h3>
+        <p>Copy image SEO fields fast without opening the lower panel</p>
+        <div class="img-quick-grid">
+          <button class="btn btn-alt     btn-full" style="height:38px;" onclick="copyImageField('alt')">Copy Alt Text</button>
+          <button class="btn btn-imgtitle btn-full" style="height:38px;" onclick="copyImageField('title')">Copy Img Title</button>
+          <button class="btn btn-caption  btn-full" style="height:38px;" onclick="copyImageField('caption')">Copy Caption</button>
+          <button class="btn btn-copyall  btn-full" style="height:38px;" onclick="copyImageField('all')">Copy All</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════
+         IMAGE TOOL (ImageToolFrame)
+    ══════════════════════════════════════════════════ -->
+    <div id="image-tool" class="panel">
+      <div class="tool-header">
+        <h2>Image SEO + Crop Tool</h2>
+        <p>ImageSEOprompt style UI with crop, export under 100KB, and quick WordPress copy.</p>
+      </div>
+      <!-- Top tool buttons -->
+      <div class="img-top-tools">
+        <button class="btn btn-purple btn-lg" style="width:160px;" onclick="triggerImageUpload()">Upload Image</button>
+        <button class="btn btn-green  btn-lg" style="width:190px;" onclick="generateImageSeo()">Generate Image SEO</button>
+        <button class="btn btn-blue   btn-lg" style="width:180px;" onclick="copyImageField('all')">Copy All Image SEO</button>
+        <button class="btn btn-red    btn-lg" style="width:130px;" onclick="clearImageFields()">Clear All</button>
+        <input type="file" id="image-file-input" accept=".png,.jpg,.jpeg,.webp,.bmp" style="display:none" onchange="onImageSelected(event)">
+      </div>
+
+      <!-- Body: crop left + right panel -->
+      <div class="img-body">
+        <!-- ── Crop Panel (left) ── -->
+        <div class="panel-inner crop-frame">
+          <h3>Thumbnail Crop Tool</h3>
+          <p class="sub">Drag image or resize crop box. Generate SEO uses cropped image if crop exists.</p>
+
+          <!-- Controls row: presets + switches + zoom -->
+          <div class="crop-controls">
+            <button class="btn btn-blue btn-sm" style="width:128px;" onclick="setCropPreset(1200,366)">Preset 1200x366</button>
+            <button class="btn btn-blue btn-sm" style="width:118px;" onclick="setCropPreset(800,445)">Preset 800x445</button>
+
+            <label class="switch-wrap" onclick="toggleLockRatio()">
+              <div class="switch on-green active" id="lock-ratio-switch">
+                <div class="switch-knob"></div>
+              </div>
+              Lock Ratio
+            </label>
+
+            <label class="switch-wrap" onclick="toggleSafeZone()">
+              <div class="switch on-purple active" id="safe-zone-switch">
+                <div class="switch-knob"></div>
+              </div>
+              Safe Zone
+            </label>
+
+            <span class="zoom-label">Zoom</span>
+            <input type="range" id="zoom-slider" class="zoom-slider" min="0.5" max="3.0" step="0.01" value="1.0" oninput="onZoomChanged(this.value)">
+          </div>
+
+          <!-- Canvas -->
+          <div id="crop-canvas-wrap">
+            <canvas id="crop-canvas"></canvas>
+          </div>
+
+          <!-- Bottom: Apply/Export/Clear -->
+          <div class="crop-bottom">
+            <button class="btn btn-green"  style="width:150px;height:36px;" onclick="applyCrop()">Apply Crop</button>
+            <button class="btn btn-yellow" style="width:160px;height:36px;" onclick="exportUnder100kb()">Export &lt;100KB</button>
+            <button class="btn btn-red"    style="width:120px;height:36px;" onclick="clearCropOnly()">Clear Crop</button>
+          </div>
+          <div id="crop-info-label">No image loaded</div>
+        </div>
+
+        <!-- ── Right Panel (SEO fields) ── -->
+        <div class="panel-inner img-right-frame">
+          <div class="field-section">
+            <div class="field-label">Keyword / Scene Notes</div>
+            <input type="text" id="scene-entry" class="scene-entry" placeholder="Example: car review / interview / homepage banner">
+          </div>
+
+          <div class="copy-btns-grid">
+            <button class="btn btn-blue btn-full" style="height:36px;" onclick="copyImageField('alt')">Copy Alt Text</button>
+            <button class="btn btn-blue btn-full" style="height:36px;" onclick="copyImageField('title')">Copy Img Title</button>
+            <button class="btn btn-blue btn-full" style="height:36px;" onclick="copyImageField('caption')">Copy Caption</button>
+            <button class="btn btn-cyan btn-full" style="height:36px;" onclick="copyImageField('all')">Copy All</button>
+          </div>
+
+          <div class="field-section">
+            <div class="field-label">Alt Text</div>
+            <textarea id="alt-text" class="seo-field-box" rows="5" style="height:110px;"></textarea>
+          </div>
+
+          <div class="field-section">
+            <div class="field-label">Img Title</div>
+            <input type="text" id="img-title-entry" class="img-title-entry" placeholder="">
+          </div>
+
+          <div class="field-section">
+            <div class="field-label">Caption</div>
+            <textarea id="caption-text" class="seo-field-box" rows="6" style="height:150px;"></textarea>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!-- end image tool -->
+
+  </div><!-- end main-scroll -->
+</div><!-- end outer -->
+
+<!-- ══ API Settings Modal (APISettingsPopup) ══ -->
+<div class="modal-backdrop" id="api-modal">
+  <div class="modal">
+    <div class="modal-inner">
+      <h2>Together AI API Settings</h2>
+      <p class="modal-sub">Your key is hidden by default, tested before use, and encrypted before saving on this computer.</p>
+      <input type="password" id="modal-api-entry" class="modal-api-entry" placeholder="Paste Together AI API key here">
+      <div class="modal-toggles">
+        <label class="checkbox-wrap">
+          <input type="checkbox" id="show-key-cb" onchange="toggleShowKey()">
+          Show API key
+        </label>
+        <label class="checkbox-wrap">
+          <input type="checkbox" id="save-key-cb" checked>
+          Save encrypted on this computer
+        </label>
+      </div>
+      <div class="modal-buttons">
+        <button class="btn btn-cyan"   style="width:135px;height:40px;" onclick="testApiKey()">Test Key</button>
+        <button class="btn btn-green"  style="width:145px;height:40px;" onclick="saveAndUse()">Save &amp; Use</button>
+        <button class="btn btn-blue"   style="width:155px;height:40px;" onclick="useSessionOnly()">Use This Session</button>
+        <button class="btn btn-red"    style="width:145px;height:40px;" onclick="clearSavedKey()">Clear Saved Key</button>
+      </div>
+      <div class="modal-tips">
+        User steps:<br>
+        1. Open API Settings<br>
+        2. Paste API key<br>
+        3. Click Test Key<br>
+        4. Click Save &amp; Use<br><br>
+        If cryptography is not installed, the key can still be used for the current session, but encrypted saving will be disabled.
+      </div>
+      <div class="modal-status" id="modal-status">Paste your Together AI API key to test and save</div>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<script src="/static/script.js"></script>
+</body>
+</html>
