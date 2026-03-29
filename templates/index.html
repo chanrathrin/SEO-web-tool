@@ -15,14 +15,15 @@
         </div>
 
         <div class="top-right">
-          <input id="apiKey" class="api-key-input" type="password" placeholder="Paste Together API key here">
+          <button id="apiSettingsBtn" class="app-btn cyan-btn top-btn">API Settings</button>
         </div>
       </div>
 
       <div class="main-scroll">
         <div class="section-title">All in One Tools</div>
 
-        <section class="article-tool">
+        <!-- ARTICLE TOOL -->
+        <section class="tool-card article-tool">
           <div class="article-header">
             <h1>Article SEO + WordPress Tool</h1>
             <p>Generate clean article structure and WordPress-ready HTML.</p>
@@ -43,13 +44,13 @@
 
               <div class="tools-card">
                 <div class="tools-row">
-                  <button id="generateBtn" class="app-btn yellow-btn">Generate News Format</button>
-                  <button id="clearBtn" class="app-btn red-btn">Clear Input</button>
+                  <button id="generateArticleBtn" class="app-btn yellow-btn">Generate News Format</button>
+                  <button id="clearArticleBtn" class="app-btn red-btn">Clear Input</button>
                   <button id="copyHtmlBtn" class="app-btn green-btn">Copy WP HTML</button>
                 </div>
               </div>
 
-              <textarea id="articleText" class="editor editor-left">Paste your article here...</textarea>
+              <textarea id="articleInputText" class="editor editor-left">Paste your article here...</textarea>
             </div>
 
             <div class="panel panel-right">
@@ -59,13 +60,13 @@
                 <div class="quick-title">Quick Copy Sections</div>
                 <div class="quick-subtitle">Focus Keyphrase / SEO Title / Meta Description</div>
                 <div class="quick-row">
-                  <button class="app-btn cyan-btn" data-copy="focus_keyphrase">Focus Keyphrase</button>
-                  <button class="app-btn purple-btn" data-copy="seo_title">SEO Title</button>
-                  <button class="app-btn yellow-btn" data-copy="meta_description">Meta Description</button>
+                  <button class="app-btn cyan-btn" data-copy-article="focus_keyphrase">Focus Keyphrase</button>
+                  <button class="app-btn purple-btn" data-copy-article="seo_title">SEO Title</button>
+                  <button class="app-btn yellow-btn" data-copy-article="meta_description">Meta Description</button>
                 </div>
               </div>
 
-              <textarea id="outputText" class="editor editor-right" readonly>Formatted SEO output will appear here.</textarea>
+              <textarea id="articleOutputText" class="editor editor-right" readonly>Formatted SEO output will appear here.</textarea>
 
               <div class="hidden-fields" aria-hidden="true">
                 <input id="focusKeyphrase" type="text" readonly>
@@ -78,9 +79,149 @@
             </div>
           </div>
         </section>
+
+        <div class="quick-wrap">
+          <div class="quick-block">
+            <div class="quick-title">Quick Copy Sections</div>
+            <div class="quick-subtitle">Focus Keyphrase / SEO Title / Meta Description</div>
+            <div class="quick-row">
+              <button class="app-btn cyan-btn" data-copy-article="focus_keyphrase">Focus Keyphrase</button>
+              <button class="app-btn purple-btn" data-copy-article="seo_title">SEO Title</button>
+              <button class="app-btn yellow-btn" data-copy-article="meta_description">Meta Description</button>
+            </div>
+          </div>
+
+          <div class="quick-block">
+            <div class="quick-title">Quick Copy Image SEO</div>
+            <div class="quick-subtitle">Alt Text / Image Title / Caption</div>
+            <div class="quick-row">
+              <button class="app-btn cyan-btn" data-copy-image="alt_text">Alt Text</button>
+              <button class="app-btn purple-btn" data-copy-image="image_title">Image Title</button>
+              <button class="app-btn yellow-btn" data-copy-image="caption">Caption</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- IMAGE TOOL -->
+        <section class="tool-card image-tool">
+          <div class="article-header">
+            <h1>Image SEO + Crop Tool</h1>
+            <p>Import, crop, optimize, and generate WordPress-ready image SEO fields.</p>
+          </div>
+
+          <div class="image-grid">
+            <div class="panel panel-left image-left">
+              <div class="panel-title">Image Input</div>
+              <div class="panel-subtitle">Import image and prepare it for WordPress SEO</div>
+
+              <div class="tools-card">
+                <div class="tools-row">
+                  <label class="app-btn blue-btn pseudo-file-btn">
+                    Import Featured Image
+                    <input id="imageFileInput" type="file" accept="image/*" hidden>
+                  </label>
+                  <button id="processImageBtn" class="app-btn yellow-btn">Generate Image SEO</button>
+                  <button id="clearImageBtn" class="app-btn red-btn">Clear</button>
+                </div>
+                <div class="tools-row">
+                  <button id="exportImageBtn" class="app-btn green-btn">Export &lt;100KB</button>
+                </div>
+              </div>
+
+              <div class="image-preview-wrap">
+                <div class="crop-info-label" id="cropInfoLabel">No image loaded</div>
+                <div class="image-preview-box">
+                  <img id="imagePreview" class="image-preview hidden" alt="Preview">
+                  <div id="imagePreviewPlaceholder" class="image-preview-placeholder">No image loaded</div>
+                </div>
+              </div>
+
+              <div class="slider-grid">
+                <div class="slider-group">
+                  <label for="brightnessRange">Brightness</label>
+                  <input id="brightnessRange" type="range" min="0.5" max="1.8" step="0.1" value="1.0">
+                </div>
+                <div class="slider-group">
+                  <label for="sharpnessRange">Sharpness</label>
+                  <input id="sharpnessRange" type="range" min="0.5" max="2.5" step="0.1" value="1.0">
+                </div>
+                <div class="slider-group">
+                  <label for="blurRange">Blur</label>
+                  <input id="blurRange" type="range" min="0" max="4" step="0.2" value="0">
+                </div>
+              </div>
+            </div>
+
+            <div class="panel panel-right image-right">
+              <div class="panel-title">Image SEO Output</div>
+              <div class="panel-subtitle">Fill or generate image SEO content</div>
+
+              <div class="field-stack">
+                <div class="field-box">
+                  <label for="sceneInput">Scene / Prompt Hint</label>
+                  <input id="sceneInput" class="field-input no-margin" type="text" placeholder="Describe the image scene...">
+                </div>
+
+                <div class="field-box">
+                  <label for="altTextOutput">Alt Text</label>
+                  <textarea id="altTextOutput" class="small-editor"></textarea>
+                </div>
+
+                <div class="field-box">
+                  <label for="imageTitleOutput">Image Title</label>
+                  <input id="imageTitleOutput" class="field-input no-margin" type="text">
+                </div>
+
+                <div class="field-box">
+                  <label for="captionOutput">Caption</label>
+                  <textarea id="captionOutput" class="small-editor"></textarea>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
       </div>
 
       <div class="status-bar" id="statusBar">Ready</div>
+    </div>
+  </div>
+
+  <div id="apiModal" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-title">Together AI API Settings</div>
+      <div class="modal-subtitle">
+        Your key is hidden by default, tested before use, and saved in browser local storage for this device only.
+      </div>
+
+      <input id="apiKeyInput" class="field-input modal-input" type="password" placeholder="Paste Together AI API key here">
+
+      <div class="modal-checks">
+        <label class="check-label">
+          <input id="showApiCheckbox" type="checkbox">
+          <span>Show API key</span>
+        </label>
+        <label class="check-label">
+          <input id="saveApiCheckbox" type="checkbox" checked>
+          <span>Save on this browser</span>
+        </label>
+      </div>
+
+      <div class="modal-buttons">
+        <button id="testApiBtn" class="app-btn cyan-btn">Test Key</button>
+        <button id="saveApiBtn" class="app-btn green-btn">Save &amp; Use</button>
+        <button id="sessionApiBtn" class="app-btn blue-btn">Use This Session</button>
+        <button id="clearSavedApiBtn" class="app-btn red-btn">Clear Saved Key</button>
+      </div>
+
+      <div class="tips-box">
+        User steps:
+        1. Open API Settings
+        2. Paste API key
+        3. Click Test Key
+        4. Click Save &amp; Use
+      </div>
+
+      <div class="modal-status" id="apiModalStatus">Ready</div>
     </div>
   </div>
 
