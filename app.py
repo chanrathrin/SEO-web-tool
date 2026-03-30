@@ -299,15 +299,65 @@ def choose_heading_from_text(text, seen):
         return cand
     return ""
 
+def make_question_heading(text, idx):
+    """Convert a heading/phrase into a question-style H2 like news sites."""
+    text = clean_heading_candidate(text)
+    words = text.split()
+    if not words:
+        return f"Section {idx}"
+
+    # Already a question
+    if text.endswith("?"):
+        return text
+
+    # Detect topic keywords and form questions
+    low = text.lower()
+    if any(w in low for w in ["why", "what", "how", "when", "who", "where"]):
+        return text + "?" if not text.endswith("?") else text
+
+    # Build question from phrase
+    question_prefixes = [
+        "What Is", "What Are", "How Does", "Why Did", "What Happened With",
+        "What Comes Next for", "What This Means for",
+    ]
+    # Pick prefix based on content hints
+    if any(w in low for w in ["next", "future", "ahead", "plan"]):
+        prefix = "What Comes Next for"
+    elif any(w in low for w in ["impact", "effect", "mean", "implication"]):
+        prefix = "What This Means for"
+    elif any(w in low for w in ["why", "reason", "cause", "trigger"]):
+        prefix = "Why Did"
+    elif any(w in low for w in ["how", "operation", "update", "key"]):
+        prefix = "How"
+    elif any(w in low for w in ["who", "leader", "president", "minister"]):
+        prefix = "Who Is"
+    else:
+        prefix = "What Is"
+
+    # Keep heading concise
+    core = " ".join(words[:8])
+    h2 = f"{prefix} {core}?"
+
+    # Clean up double words (e.g. "What Is What Is...")
+    for p in question_prefixes:
+        p_low = p.lower()
+        if low.startswith(p_low):
+            h2 = text + "?" if not text.endswith("?") else text
+            break
+
+    return h2
+
+
 def build_nested_article_structure(sections):
     structure = []
     seen = set()
     for idx, section in enumerate([s.strip() for s in sections if s and s.strip()][:3], start=1):
-        h2 = choose_heading_from_text(section, seen)
-        if not h2:
+        h2_raw = choose_heading_from_text(section, seen)
+        if not h2_raw:
             words = clean_heading_candidate(section).split()
-            h2 = " ".join(words[:10]).strip() or f"Section {idx}"
-        body = remove_heading_from_body(h2, section).strip()
+            h2_raw = " ".join(words[:10]).strip() or f"Section {idx}"
+        h2 = make_question_heading(h2_raw, idx)
+        body = remove_heading_from_body(h2_raw, section).strip()
         body = body or normalize_space(section)
         paragraphs = [p.strip() for p in body.split("\n\n") if p.strip()]
         if not paragraphs:
@@ -568,6 +618,126 @@ def process_article():
     if not raw or raw in ("Paste your article here...", "Paste your article here."):
         return jsonify({"ok": False, "error": "Please paste an article first"}), 400
 
+    # If API key available — use AI to generate full layout
+    if api_key:
+        try:
+            system_prompt = """Role: You are a Professional Webmaster SEO Specialist.
+Task: Format the provided article to look exactly like a high-quality news layout (Clear H1, H2, and Body separation).
+
+STRICT RULES (ABSOLUTE):
+- NO ADDED CONTENT: Do not add any information, opinions, or details not in the original text.
+- NO REMOVAL: Do not cut out any facts, names, or quotes.
+- VISUAL STRUCTURE: Use bold headers for H1 and H2 to separate them clearly from the body text.
+- 100% ORIGINAL MEANING: Keep the exact intent and tone of the source.
+- H2 headings MUST be question-style (e.g. "What Triggered...?", "What Comes Next for...?", "How Does...?")
+
+Return ONLY valid JSON with these exact keys:
+{
+  "h1": "Main title",
+  "intro": "First 50-100 words body introduction",
+  "structure": [
+    {
+      "h2": "Question-style H2 heading?",
+      "body": "Section body. MUST use \n\n between every 1-2 sentences. Short paragraphs only. Bullets use - prefix."
+    }
+  ],
+  "conclusion": "Original summary + CTA question",
+  "internal_link_topic": "Topic for internal link placeholder",
+  "focus_keyphrase": "2-5 word keyphrase",
+  "seo_title": "Max 60 chars SEO title",
+  "meta_description": "120-150 chars meta description",
+  "image_alt_text": "Image alt text",
+  "image_title": "Image title",
+  "slug": "url-slug",
+  "short_summary": "20-second video length summary"
+}
+
+No markdown, no explanation, no extra keys. Return JSON only."""
+
+            response = together_chat_completion(
+                api_key=api_key,
+                model=ARTICLE_MODEL,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": f"Format this article:\n\n{raw[:6000]}"},
+                ],
+                temperature=0.3,
+                timeout=60,
+            )
+            content = extract_message_content(response)
+            try:
+                ai_data = json.loads(content)
+            except Exception:
+                cleaned = content.replace("```json", "").replace("```", "").strip()
+                match = re.search(r"\{.*\}", cleaned, re.DOTALL)
+                ai_data = json.loads(match.group(0) if match else cleaned)
+
+            h1 = sanitize_text(ai_data.get("h1", ""), 200)
+            intro = sanitize_text(ai_data.get("intro", ""), 500)
+            conclusion = sanitize_text(ai_data.get("conclusion", ""), 500)
+            internal_link_topic = sanitize_text(ai_data.get("internal_link_topic", ""), 100)
+
+            structure = []
+            for sec in (ai_data.get("structure") or [])[:4]:
+                h2 = sanitize_text(sec.get("h2", ""), 150)
+                body = (sec.get("body") or "").strip()
+                if h2 and body:
+                    structure.append({"h2": h2, "subsections": [{"h3": h2, "body": body}]})
+
+            focus_keyphrase = sanitize_text(ai_data.get("focus_keyphrase", ""), 80)
+            seo_title = sanitize_text(ai_data.get("seo_title", ""), 60)
+            meta_description = sanitize_text(ai_data.get("meta_description", ""), 160)
+            image_alt_text = sanitize_text(ai_data.get("image_alt_text", ""), 100)
+            image_title = sanitize_text(ai_data.get("image_title", ""), 100)
+            slug = sanitize_text(ai_data.get("slug", make_slug(h1)), 80)
+            short_summary = sanitize_text(ai_data.get("short_summary", ""), 300)
+
+            # Build WordPress HTML
+            wp_parts = []
+            if h1:
+                wp_parts.append(f"<h1>{esc(h1)}</h1>")
+            if intro:
+                wp_parts.append(f"<p>{esc(intro)}</p>")
+            for sec in structure:
+                if sec.get("h2"):
+                    wp_parts.append(f"<h2>{esc(sec['h2'])}</h2>")
+                body_text = sec["subsections"][0].get("body", "") if sec.get("subsections") else ""
+                if body_text:
+                    for para in [p.strip() for p in body_text.split("\n\n") if p.strip()]:
+                        if para.startswith("- "):
+                            items = [li.strip("- ").strip() for li in para.split("\n") if li.strip().startswith("- ")]
+                            wp_parts.append("<ul>" + "".join(f"<li>{esc(i)}</li>" for i in items) + "</ul>")
+                        else:
+                            wp_parts.append(f"<p>{esc(para)}</p>")
+            if internal_link_topic:
+                wp_parts.append(f'<p><em>You can also read more about <a href="#">{esc(internal_link_topic)}</a>...</em></p>')
+            if conclusion:
+                wp_parts.append(f"<h2>{esc('Conclusion')}</h2>")
+                wp_parts.append(f"<p>{esc(conclusion)}</p>")
+            wp_html = "\n".join(wp_parts)
+
+            return jsonify({
+                "ok": True,
+                "ai_layout": True,
+                "h1": h1,
+                "intro": intro,
+                "conclusion": conclusion,
+                "internal_link_topic": internal_link_topic,
+                "structure": structure,
+                "focus_keyphrase": focus_keyphrase,
+                "seo_title": seo_title,
+                "meta_description": meta_description,
+                "image_alt_text": image_alt_text,
+                "image_title": image_title,
+                "slug": slug,
+                "short_summary": short_summary,
+                "wp_html": wp_html,
+                "ai_seo": True,
+            })
+        except Exception as e:
+            pass  # Fall through to rule-based below
+
+    # Fallback: rule-based (no API key or AI failed)
     lines = strip_internal_seo_lines(clean_lines(raw))
     if not lines:
         return jsonify({"ok": False, "error": "No valid content found"}), 400
@@ -576,7 +746,6 @@ def process_article():
     intro = build_intro(lines)
     sections = split_body_into_sections(lines, num_sections=None)
     structure = build_nested_article_structure(sections)
-
     focus_keyphrase = make_focus_keyphrase(h1)
     seo_titles = make_seo_title_options(h1)
     meta_options = make_meta_options(intro, h1)
@@ -586,8 +755,9 @@ def process_article():
     short_summary = make_short_summary(intro, structure)
     wp_html = build_wordpress_html_fragment(h1, intro, structure)
 
-    result = {
+    return jsonify({
         "ok": True,
+        "ai_layout": False,
         "h1": h1,
         "intro": intro,
         "structure": structure,
@@ -597,9 +767,7 @@ def process_article():
         "slug": slug,
         "short_summary": short_summary,
         "wp_html": wp_html,
-    }
-
-    return jsonify(result)
+    })
 
 
 @app.route("/api/generate-ai-seo", methods=["POST"])
