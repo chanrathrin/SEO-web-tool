@@ -209,34 +209,58 @@ async function _processCore(){
     }
 
     _sections={
-      focus_keyphrase_copy: d.focus_keyphrase||"",
-      seo_title_copy:       d.seo_title||"",
-      meta_description_copy:d.meta_description||"",
-      slug_copy:            d.slug||"",
-      short_summary_copy:   d.short_summary||"",
-      h1_copy:              d.h1||"",
-      intro_copy:           d.intro||"",
-      structure_copy:       d.structure||[],
-      wp_html_copy:         d.wp_html||"",
+      focus_keyphrase_copy:  d.focus_keyphrase||"",
+      seo_title_copy:        d.seo_title||"",
+      meta_description_copy: d.meta_description||"",
+      slug_copy:             d.slug||"",
+      short_summary_copy:    d.short_summary||"",
+      image_alt_copy:        d.image_alt_text||"",
+      image_title_copy:      d.image_title||"",
+      h1_copy:               d.h1||"",
+      intro_copy:            d.intro||"",
+      conclusion_copy:       d.conclusion||"",
+      internal_link_copy:    d.internal_link_topic||"",
+      structure_copy:        d.structure||[],
+      wp_html_copy:          d.wp_html||"",
     };
 
-    // render_output_preview — build plain text preview
+    // render_output_preview
     let prev="";
-    if(d.h1)    prev+=d.h1+"\n\n";
+    if(d.h1)    prev+="# "+d.h1+"\n\n";
     if(d.intro) prev+=d.intro+"\n\n";
     for(const sec of (d.structure||[])){
-      if(sec.h2) prev+=sec.h2+"\n\n";
+      if(sec.h2) prev+="## "+sec.h2+"\n\n";
       for(const sub of (sec.subsections||[])){
-        if(sub.h3) prev+=sub.h3+"\n\n";
         if(sub.body){
-          prev+=sub.body.split(/\n\n+/).filter(p=>p.trim()).join("\n\n")+"\n\n";
+          // Preserve line breaks and bullet points
+          const paras = sub.body.split(/\n\n+/).filter(p=>p.trim());
+          for(const para of paras){
+            prev+=para.trim()+"\n\n";
+          }
         }
       }
     }
+    if(d.internal_link_topic) prev+='📎 You can also read more about "'+d.internal_link_topic+'"...\n\n';
+    if(d.conclusion) prev+="## Conclusion\n\n"+d.conclusion+"\n\n";
     document.getElementById("output-text").value=prev.trim();
+
+    // Update SEO fields into their input boxes
+    const _set=(id,val)=>{const el=document.getElementById(id);if(el){if(el.tagName==="TEXTAREA"||el.tagName==="INPUT")el.value=val||"";else el.textContent=val||"";}};
+    _set("focus-keyphrase", d.focus_keyphrase);
+    _set("seo-title",        d.seo_title);
+    _set("meta-description", d.meta_description);
+    _set("slug",             d.slug);
+    _set("short-summary",    d.short_summary);
+    _set("image-alt",        d.image_alt_text);
+    _set("image-title",      d.image_title);
+
+    if(d.ai_layout){
+      setStatus("✅ AI SEO layout generated successfully");
+      return;
+    }
     setStatus("Article SEO output generated");
 
-    // AI SEO — separate async call
+    // AI SEO — separate async call (fallback only)
     if(getKey()){
       setStatus("Generating SEO fields...");
       try{
@@ -284,10 +308,14 @@ function copySection(name){
     "Focus Keyphrase": _sections.focus_keyphrase_copy||"",
     "SEO Title":       _sections.seo_title_copy||"",
     "Meta Description":_sections.meta_description_copy||"",
+    "Slug":            _sections.slug_copy||"",
+    "Short Summary":   _sections.short_summary_copy||"",
+    "Image Alt":       _sections.image_alt_copy||"",
+    "Image Title":     _sections.image_title_copy||"",
   };
   const v=(map[name]||"").trim();
   if(!v){setStatus(`No content for ${name}`);return;}
-  copyText(v,`Smooth copied: ${name}`);
+  copyText(v,`Copied: ${name}`);
 }
 
 // ═══════════════════════════════════════════════════════════════
