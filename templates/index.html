@@ -12,7 +12,6 @@
 <body>
   <div class="app-shell">
 
-    <!-- TOPBAR -->
     <header class="topbar">
       <div class="topbar-left">
         <div class="brand-mark">⬡</div>
@@ -23,18 +22,18 @@
           </div>
         </div>
       </div>
+
       <div class="topbar-right">
+        <button class="api-settings-btn" id="openApiModal">⚙ API Settings</button>
         <span class="api-badge ready" id="apiBadge">○ Ready</span>
       </div>
     </header>
 
-    <!-- TAB BAR -->
     <div class="tab-strip">
       <button class="tab-btn active" data-tab="seo">📝 SEO Formatter</button>
       <button class="tab-btn" data-tab="img">🖼 Image SEO</button>
     </div>
 
-    <!-- SEO TAB -->
     <section class="tab-panel active" id="tab-seo">
       <div class="card action-card">
         <div class="action-bar">
@@ -99,7 +98,6 @@
       </div>
     </section>
 
-    <!-- IMAGE TAB -->
     <section class="tab-panel" id="tab-img">
       <div class="card action-card">
         <div class="action-bar">
@@ -187,6 +185,36 @@
 
     <div class="status-bar" id="statusBar">Ready</div>
     <div class="toast" id="toast"></div>
+
+    <div class="modal-backdrop hidden" id="apiModal">
+      <div class="modal-card">
+        <div class="modal-head">
+          <div>
+            <div class="modal-title">Together AI API Settings</div>
+            <div class="modal-sub">Put your own API key here. Saved only in your browser.</div>
+          </div>
+          <button class="modal-close" id="closeApiModal">✕</button>
+        </div>
+
+        <label class="modal-label">API KEY</label>
+        <input type="password" id="apiKeyInput" class="modal-input" placeholder="Paste your Together API key here"/>
+
+        <div class="modal-row">
+          <label class="check-row">
+            <input type="checkbox" id="showApiKey"/>
+            <span>Show key</span>
+          </label>
+        </div>
+
+        <div class="modal-actions">
+          <button class="btn cyan" id="btnTestApi">Test Key</button>
+          <button class="btn green" id="btnSaveApi">Save Key</button>
+          <button class="btn red" id="btnClearApi">Clear Saved Key</button>
+        </div>
+
+        <div class="modal-status" id="apiModalStatus">No key saved</div>
+      </div>
+    </div>
   </div>
 
   <script src="/static/script.js"></script>
