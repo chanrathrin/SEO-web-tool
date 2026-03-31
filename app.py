@@ -16,10 +16,8 @@ try:
 except Exception:
     pass
 
-
 app = Flask(__name__, template_folder="templates", static_folder="static")
-app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024  # 16 MB
-
+app.config["MAX_CONTENT_LENGTH"] = 20 * 1024 * 1024
 
 TOGETHER_API_KEY = os.getenv("TOGETHER_API_KEY", "").strip()
 TOGETHER_BASE_URL = "https://api.together.xyz/v1"
@@ -29,9 +27,6 @@ VISION_FALLBACK_MODEL = "Qwen/Qwen3-VL-8B-Instruct"
 RATE_BUCKET = defaultdict(list)
 
 
-# ─────────────────────────────────────────────────────────────
-# Helpers
-# ─────────────────────────────────────────────────────────────
 def get_client_ip():
     forwarded = request.headers.get("X-Forwarded-For", "").strip()
     if forwarded:
@@ -39,7 +34,7 @@ def get_client_ip():
     return request.remote_addr or "unknown"
 
 
-def rate_limit_ok(ip: str, per_minute: int = 20) -> bool:
+def rate_limit_ok(ip: str, per_minute: int = 25) -> bool:
     now = time.time()
     RATE_BUCKET[ip] = [t for t in RATE_BUCKET[ip] if now - t < 60]
     if len(RATE_BUCKET[ip]) >= per_minute:
@@ -48,11 +43,18 @@ def rate_limit_ok(ip: str, per_minute: int = 20) -> bool:
     return True
 
 
-def together_headers():
+def together_headers(api_key: str):
     return {
-        "Authorization": f"Bearer {TOGETHER_API_KEY}",
+        "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
     }
+
+
+def get_effective_api_key(user_key: str = "") -> str:
+    user_key = (user_key or "").strip()
+    if user_key:
+        return user_key
+    return TOGETHER_API_KEY
 
 
 def extract_content(resp_json):
@@ -80,7 +82,6 @@ def parse_json_str(raw: str) -> dict:
         raise ValueError("Empty model response")
 
     candidates = [raw]
-
     cleaned = raw.replace("```json", "").replace("```", "").strip()
     if cleaned != raw:
         candidates.append(cleaned)
@@ -125,19 +126,13 @@ def trim_words(text: str, limit: int, chars: bool = False) -> str:
 
 
 def normalize_heading(text: str) -> str:
-    text = re.sub(r"\s+", " ", str(text or "")).strip(" .,:;-")
-    return text
-
-
-def sentence_case(text: str) -> str:
-    text = normalize_heading(text)
-    return text[:1].upper() + text[1:] if text else ""
+    return re.sub(r"\s+", " ", str(text or "")).strip(" .,:;-")
 
 
 def html_to_plain(raw_html: str) -> str:
     text = re.sub(r"<br\s*/?>", "\n", raw_html, flags=re.I)
     text = re.sub(r"</(p|div|section|article|h1|h2|h3|h4|h5|li|blockquote)>", "\n", text, flags=re.I)
-    text = re.sub(r"<iframe\b[^>]*src=[\"']([^\"']+)[\"'][^>]*>\s*</iframe>", r"\n\1\n", text, flags=re.I | re.S)
+    text = re.sub(r"<iframe\\b[^>]*src=[\"']([^\"']+)[\"'][^>]*>\\s*</iframe>", r"\n\1\n", text, flags=re.I | re.S)
     text = re.sub(r"<[^>]+>", " ", text)
     text = re.sub(r"&nbsp;", " ", text)
     text = re.sub(r"&amp;", "&", text)
@@ -184,7 +179,7 @@ def strip_seo_lines(lines):
         s = line.strip()
         if any(s.startswith(prefix) for prefix in prefixes):
             continue
-        if re.match(r"^https?://[^\s]+$", s):
+        if re.match(r"^https?://[^\\s]+$", s):
             continue
         if out and s and out[-1].strip() == s:
             continue
@@ -553,12 +548,37 @@ def process_seo_text(raw_text: str):
     }
 
 
-# ─────────────────────────────────────────────────────────────
-# Routes
-# ─────────────────────────────────────────────────────────────
 @app.route("/")
 def home():
     return render_template("index.html")
+
+
+@app.route("/api/ping-key", methods=["POST"])
+def api_ping_key():
+    payload = request.get_json(silent=True) or {}
+    api_key = get_effective_api_key(payload.get("api_key", ""))
+
+    if not api_key:
+        return jsonify({"ok": False, "error": "No API key provided"}), 400
+
+    try:
+        r = requests.get(
+            f"{TOGETHER_BASE_URL}/models",
+            headers=together_headers(api_key),
+            timeout=25,
+        )
+
+        if r.status_code >= 400:
+            try:
+                d = r.json()
+                msg = d.get("error", {}).get("message") or d.get("message") or r.text
+            except Exception:
+                msg = r.text
+            return jsonify({"ok": False, "error": msg}), 400
+
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
 
 
 @app.route("/api/seo-format", methods=["POST"])
@@ -586,8 +606,11 @@ def api_image_seo():
     if not rate_limit_ok(ip, 20):
         return jsonify({"error": "Too many requests. Please wait a minute."}), 429
 
-    if not TOGETHER_API_KEY:
-        return jsonify({"error": "TOGETHER_API_KEY is not configured on the server."}), 500
+    user_api_key = request.form.get("api_key", "")
+    api_key = get_effective_api_key(user_api_key)
+
+    if not api_key:
+        return jsonify({"error": "No Together API key configured. Put your API key in website settings."}), 400
 
     uploaded = request.files.get("image")
     keyword = (request.form.get("keyword") or "").strip()
@@ -649,7 +672,7 @@ def api_image_seo():
 
             response = requests.post(
                 f"{TOGETHER_BASE_URL}/chat/completions",
-                headers=together_headers(),
+                headers=together_headers(api_key),
                 json=payload,
                 timeout=90,
             )
@@ -665,7 +688,7 @@ def api_image_seo():
                 "model": model,
             })
 
-        except Exception as e:
+        except Exception as e
             errors.append(str(e))
 
     return jsonify({"error": " | ".join(errors)[:900] or "Image SEO request failed."}), 502
