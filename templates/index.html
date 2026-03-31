@@ -1,202 +1,194 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>WordPress SEO Studio</title>
-<link rel="preconnect" href="https://fonts.googleapis.com"/>
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
-<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:ital,wght@0,400;0,500;1,400&family=Lora:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet"/>
-<link rel="stylesheet" href="/static/style.css"/>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>WordPress SEO Studio</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="/static/style.css"/>
 </head>
 <body>
+  <div class="app-shell">
 
-<!-- ░░ TOPBAR ░░ -->
-<header class="topbar">
-  <div class="topbar-left">
-    <span class="logo-mark">⬡</span>
-    <span class="logo-text">WP<em>SEO</em>Studio</span>
-    <span class="logo-sub">Formatter · Image Crop · AI Image SEO · Yoast Fields</span>
-  </div>
-  <div class="topbar-right">
-    <span class="badge" id="apiBadge">○ Ready</span>
-  </div>
-</header>
-
-<!-- ░░ TAB BAR ░░ -->
-<nav class="tab-bar">
-  <button class="tab-btn active" data-tab="seo">📝 SEO Formatter</button>
-  <button class="tab-btn"        data-tab="img">🖼 Image SEO</button>
-</nav>
-
-<!-- ════════════════════════════════════════════════════
-     TAB 1 — SEO FORMATTER
-════════════════════════════════════════════════════ -->
-<section class="tab-panel active" id="tab-seo">
-
-  <!-- Action bar -->
-  <div class="action-bar">
-    <button class="btn green" id="btnGenerate">⚡ Generate SEO</button>
-    <button class="btn teal"  id="btnCopyHTML">⧉ Copy WP HTML</button>
-    <button class="btn red"   id="btnClearIn">✕ Clear Input</button>
-    <button class="btn red"   id="btnClearOut">✕ Clear Output</button>
-  </div>
-
-  <!-- Quick-copy pills  (Short Summary / Slug / Short Caption REMOVED; #Hashtags ADDED) -->
-  <div class="pill-bar">
-    <span class="pill-label">Quick Copy:</span>
-    <button class="pill purple" data-copy="seo_title">SEO Title</button>
-    <button class="pill cyan"   data-copy="focus_keyphrase">Focus Keyphrase</button>
-    <button class="pill yellow" data-copy="meta">Meta Description</button>
-    <button class="pill green"  data-copy="hashtags_str">#Hashtags</button>
-  </div>
-
-  <!-- Main columns -->
-  <div class="columns">
-
-    <!-- LEFT — input -->
-    <div class="panel">
-      <div class="panel-head">
-        <span class="panel-title">Input Article</span>
-        <span class="panel-sub">Paste plain text or full WordPress HTML</span>
+    <!-- TOPBAR -->
+    <header class="topbar">
+      <div class="topbar-left">
+        <div class="brand-mark">⬡</div>
+        <div class="brand-wrap">
+          <div class="brand-row">
+            <div class="brand-title">WPSEOStudio</div>
+            <div class="brand-sub">Formatter · Image Crop · AI Image SEO · Yoast Fields</div>
+          </div>
+        </div>
       </div>
-      <textarea id="inputArticle" class="article-input" spellcheck="false"
-        placeholder="Paste article text or full HTML code here…"></textarea>
+      <div class="topbar-right">
+        <span class="api-badge ready" id="apiBadge">○ Ready</span>
+      </div>
+    </header>
+
+    <!-- TAB BAR -->
+    <div class="tab-strip">
+      <button class="tab-btn active" data-tab="seo">📝 SEO Formatter</button>
+      <button class="tab-btn" data-tab="img">🖼 Image SEO</button>
     </div>
 
-    <!-- RIGHT — output -->
-    <div class="panel">
-      <div class="panel-head">
-        <span class="panel-title">SEO Output</span>
-        <span class="panel-sub">Formatted article preview with Yoast SEO fields</span>
+    <!-- SEO TAB -->
+    <section class="tab-panel active" id="tab-seo">
+      <div class="card action-card">
+        <div class="action-bar">
+          <button class="btn green" id="btnGenerate">⚡ Generate SEO</button>
+          <button class="btn teal" id="btnCopyHTML">⧉ Copy WP HTML</button>
+          <button class="btn red" id="btnClearIn">✕ Clear Input</button>
+          <button class="btn red" id="btnClearOut">✕ Clear Output</button>
+        </div>
       </div>
-      <div class="output-scroll" id="outputArticle">
-        <p class="placeholder-msg">Your formatted output will appear here after generation.</p>
+
+      <div class="card quick-copy-card">
+        <div class="pill-bar">
+          <span class="pill-label">Quick Copy:</span>
+          <button class="pill purple" data-copy="seo_title">SEO Title</button>
+          <button class="pill cyan" data-copy="focus_keyphrase">Focus Keyphrase</button>
+          <button class="pill yellow" data-copy="meta_description">Meta Description</button>
+          <button class="pill green" data-copy="hashtags_str">#Hashtags</button>
+        </div>
       </div>
 
-      <!-- Options grid: 4 columns -->
-      <div class="options-grid">
-
-        <div class="opt-col">
-          <div class="opt-label">SEO Title Options</div>
-          <div class="opt-box green-text" id="optTitles"></div>
+      <div class="seo-grid">
+        <div class="card panel input-panel">
+          <div class="panel-head">
+            <div class="panel-title">Input Article</div>
+            <div class="panel-sub">Paste plain text or full WordPress HTML</div>
+          </div>
+          <textarea id="inputArticle" class="article-input" spellcheck="false" placeholder="Paste article text or full HTML code here…"></textarea>
         </div>
 
-        <div class="opt-col">
-          <div class="opt-label">Meta + SEO Fields</div>
-          <div class="opt-box green-text" id="optMeta"></div>
+        <div class="card panel output-panel">
+          <div class="panel-head">
+            <div class="panel-title">SEO Output</div>
+            <div class="panel-sub">Formatted article preview with Yoast SEO fields</div>
+          </div>
+
+          <div class="output-scroll" id="outputArticle">
+            <div class="placeholder-msg">Your formatted output will appear here after generation.</div>
+          </div>
+
+          <div class="options-grid">
+            <div class="opt-col">
+              <div class="opt-label">SEO Title Options</div>
+              <div class="opt-box green-text" id="optTitles"></div>
+            </div>
+
+            <div class="opt-col">
+              <div class="opt-label">Meta + SEO Fields</div>
+              <div class="opt-box green-text" id="optMeta"></div>
+            </div>
+
+            <div class="opt-col">
+              <div class="opt-label">Short Caption (H1 · H2 · H3 — SEO)</div>
+              <div class="opt-box blue-text" id="optCaption"></div>
+            </div>
+
+            <div class="opt-col">
+              <div class="opt-label">#Hashtags (6–8 tags)</div>
+              <div class="opt-box amber-text" id="optHashtags"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- IMAGE TAB -->
+    <section class="tab-panel" id="tab-img">
+      <div class="card action-card">
+        <div class="action-bar">
+          <button class="btn purple" id="btnUpload">⬆ Upload Image</button>
+          <button class="btn green" id="btnGenImg">⚡ Generate SEO</button>
+          <button class="btn teal" id="btnCopyAll">⧉ Copy All SEO</button>
+          <button class="btn red" id="btnClearImg">✕ Clear</button>
+          <input type="file" id="fileInput" accept="image/*" hidden/>
+        </div>
+      </div>
+
+      <div class="img-grid">
+        <div class="card panel crop-panel">
+          <div class="panel-head">
+            <div class="panel-title">Image Preview &amp; Crop</div>
+            <div class="panel-sub">Upload an image to preview and crop</div>
+          </div>
+
+          <div class="preset-bar">
+            <button class="btn-sm blue" data-ratio="1200,366">1200×366</button>
+            <button class="btn-sm blue" data-ratio="800,445">800×445</button>
+            <button class="btn-sm blue" data-ratio="1,1">1:1</button>
+            <button class="btn-sm blue" data-ratio="16,9">16:9</button>
+            <button class="btn-sm blue" data-ratio="4,3">4:3</button>
+
+            <label class="toggle-label">
+              <input type="checkbox" id="lockRatio" checked/>
+              <span>Lock Ratio</span>
+            </label>
+
+            <label class="toggle-label">
+              <input type="checkbox" id="safeZone" checked/>
+              <span>Safe Zone</span>
+            </label>
+
+            <span class="zoom-label">Zoom</span>
+            <input type="range" id="zoomSlider" min="50" max="300" value="100" step="1"/>
+          </div>
+
+          <div class="canvas-wrap" id="canvasWrap">
+            <canvas id="cropCanvas"></canvas>
+            <div class="canvas-placeholder" id="canvasPlaceholder">
+              <div class="canvas-icon">🖼</div>
+              <div>Upload an image to begin</div>
+            </div>
+          </div>
+
+          <div class="crop-bot">
+            <div class="crop-actions">
+              <button class="btn-sm green" id="btnApplyCrop">✔ Apply Crop</button>
+              <button class="btn-sm yellow" id="btnExport">💾 Export &lt;100KB</button>
+              <button class="btn-sm red" id="btnClearCrop">✕ Clear Crop</button>
+            </div>
+            <div class="crop-info" id="cropInfo">No image loaded</div>
+          </div>
         </div>
 
-        <div class="opt-col">
-          <div class="opt-label">Short Caption (H1·H2·H3)</div>
-          <div class="opt-box blue-text" id="optCaption"></div>
+        <div class="card panel seo-fields-panel">
+          <div class="panel-head">
+            <div class="panel-title">Image SEO Fields</div>
+            <div class="panel-sub">AI-generated via Together AI</div>
+          </div>
+
+          <label class="field-label">KEYWORD / SCENE NOTES</label>
+          <input type="text" id="sceneInput" class="field-input" placeholder="car review / homepage banner..."/>
+
+          <div class="copy-grid">
+            <button class="btn-sm blue" id="cAlt">⧉ Alt Text</button>
+            <button class="btn-sm blue" id="cTitle">⧉ Img Title</button>
+            <button class="btn-sm blue" id="cCap">⧉ Caption</button>
+            <button class="btn-sm teal" id="cAll">⧉ Copy All</button>
+          </div>
+
+          <label class="field-label">ALT TEXT</label>
+          <textarea id="altText" class="field-area" rows="3"></textarea>
+
+          <label class="field-label">IMAGE TITLE</label>
+          <input type="text" id="imgTitle" class="field-input"/>
+
+          <label class="field-label">CAPTION</label>
+          <textarea id="caption" class="field-area field-area-grow"></textarea>
         </div>
+      </div>
+    </section>
 
-        <div class="opt-col">
-          <div class="opt-label">#Hashtags (6–8 tags)</div>
-          <div class="opt-box amber-text" id="optHashtags"></div>
-        </div>
-
-      </div><!-- /options-grid -->
-    </div><!-- /panel right -->
-
-  </div><!-- /columns -->
-</section>
-
-<!-- ════════════════════════════════════════════════════
-     TAB 2 — IMAGE SEO
-════════════════════════════════════════════════════ -->
-<section class="tab-panel" id="tab-img">
-
-  <div class="action-bar">
-    <button class="btn purple" id="btnUpload">⬆ Upload Image</button>
-    <button class="btn green"  id="btnGenImg">⚡ Generate SEO</button>
-    <button class="btn teal"   id="btnCopyAll">⧉ Copy All SEO</button>
-    <button class="btn red"    id="btnClearImg">✕ Clear</button>
-    <input type="file" id="fileInput" accept="image/*" style="display:none"/>
+    <div class="status-bar" id="statusBar">Ready</div>
+    <div class="toast" id="toast"></div>
   </div>
 
-  <div class="img-columns">
-
-    <!-- LEFT — crop canvas -->
-    <div class="panel crop-panel">
-      <div class="panel-head">
-        <span class="panel-title">Image Preview &amp; Crop</span>
-        <span class="panel-sub">Upload an image to preview and crop</span>
-      </div>
-
-      <!-- Preset buttons -->
-      <div class="preset-bar">
-        <button class="btn-sm blue" data-ratio="1200,366">1200×366</button>
-        <button class="btn-sm blue" data-ratio="800,445">800×445</button>
-        <button class="btn-sm blue" data-ratio="1,1">1:1</button>
-        <button class="btn-sm blue" data-ratio="16,9">16:9</button>
-        <button class="btn-sm blue" data-ratio="4,3">4:3</button>
-        <label class="toggle-label">
-          <input type="checkbox" id="lockRatio" checked/> Lock Ratio
-        </label>
-        <label class="toggle-label">
-          <input type="checkbox" id="safeZone" checked/> Safe Zone
-        </label>
-        <span class="zoom-label">Zoom</span>
-        <input type="range" id="zoomSlider" min="50" max="300" value="100" step="1"/>
-      </div>
-
-      <!-- Canvas wrapper -->
-      <div class="canvas-wrap" id="canvasWrap">
-        <canvas id="cropCanvas"></canvas>
-        <div class="canvas-placeholder" id="canvasPlaceholder">
-          <div class="canvas-icon">🖼</div>
-          <div>Upload an image to begin</div>
-        </div>
-      </div>
-
-      <!-- Bottom bar -->
-      <div class="crop-bot">
-        <button class="btn-sm green"  id="btnApplyCrop">✔ Apply Crop</button>
-        <button class="btn-sm yellow" id="btnExport">💾 Export &lt;100KB</button>
-        <button class="btn-sm red"    id="btnClearCrop">✕ Clear Crop</button>
-        <span class="crop-info" id="cropInfo">No image loaded</span>
-      </div>
-    </div>
-
-    <!-- RIGHT — SEO fields -->
-    <div class="panel seo-fields-panel">
-      <div class="panel-head">
-        <span class="panel-title">Image SEO Fields</span>
-        <span class="panel-sub">AI-generated via Together AI</span>
-      </div>
-
-      <label class="field-label">KEYWORD / SCENE NOTES</label>
-      <input type="text" id="sceneInput" class="field-input"
-             placeholder="car review / homepage banner…"/>
-
-      <div class="copy-grid">
-        <button class="btn-sm blue" id="cAlt">⧉ Alt Text</button>
-        <button class="btn-sm blue" id="cTitle">⧉ Img Title</button>
-        <button class="btn-sm blue" id="cCap">⧉ Caption</button>
-        <button class="btn-sm teal" id="cAll">⧉ Copy All</button>
-      </div>
-
-      <label class="field-label">ALT TEXT</label>
-      <textarea id="altText" class="field-area" rows="3"></textarea>
-
-      <label class="field-label">IMAGE TITLE</label>
-      <input type="text" id="imgTitle" class="field-input"/>
-
-      <label class="field-label">CAPTION</label>
-      <textarea id="caption" class="field-area" style="flex:1;min-height:80px"></textarea>
-    </div>
-
-  </div>
-</section>
-
-<!-- ░░ STATUS BAR ░░ -->
-<div class="status-bar" id="statusBar">Ready</div>
-
-<!-- Toast -->
-<div class="toast" id="toast"></div>
-
-<script src="/static/script.js"></script>
+  <script src="/static/script.js"></script>
 </body>
 </html>
