@@ -1,273 +1,202 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>SEO Tool + Together AI</title>
-<link rel="stylesheet" href="/static/style.css">
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>WordPress SEO Studio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:ital,wght@0,400;0,500;1,400&family=Lora:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="/static/style.css"/>
 </head>
 <body>
 
-<!-- status_label bottom of outer, fill="x", padx=18, pady=(0,16) -->
-<div id="status-bar"><span id="status-text">  Ready</span></div>
+<!-- ░░ TOPBAR ░░ -->
+<header class="topbar">
+  <div class="topbar-left">
+    <span class="logo-mark">⬡</span>
+    <span class="logo-text">WP<em>SEO</em>Studio</span>
+    <span class="logo-sub">Formatter · Image Crop · AI Image SEO · Yoast Fields</span>
+  </div>
+  <div class="topbar-right">
+    <span class="badge" id="apiBadge">○ Ready</span>
+  </div>
+</header>
 
-<!-- outer: fill=both expand=True padx=14 pady=14 -->
-<div id="outer">
+<!-- ░░ TAB BAR ░░ -->
+<nav class="tab-bar">
+  <button class="tab-btn active" data-tab="seo">📝 SEO Formatter</button>
+  <button class="tab-btn"        data-tab="img">🖼 Image SEO</button>
+</nav>
 
-  <!-- top_actions: fill="x" padx=18 pady=(16,8) -->
-  <div id="top-actions">
-    <span id="api-badge">API: not configured</span>
-    <button class="ab cyan" style="width:150px;height:38px" onclick="openApiSettings()">API Settings</button>
+<!-- ════════════════════════════════════════════════════
+     TAB 1 — SEO FORMATTER
+════════════════════════════════════════════════════ -->
+<section class="tab-panel active" id="tab-seo">
+
+  <!-- Action bar -->
+  <div class="action-bar">
+    <button class="btn green" id="btnGenerate">⚡ Generate SEO</button>
+    <button class="btn teal"  id="btnCopyHTML">⧉ Copy WP HTML</button>
+    <button class="btn red"   id="btnClearIn">✕ Clear Input</button>
+    <button class="btn red"   id="btnClearOut">✕ Clear Output</button>
   </div>
 
-  <!-- main_scroll CTkScrollableFrame fill=both expand=True padx=18 pady=(0,12) -->
-  <div id="main-scroll">
-
-    <!-- section_title pack anchor=w padx=8 pady=(12,8) -->
-    <div id="section-title">All in One Tools</div>
-
-    <!-- ══ article_tool.pack(fill="x", padx=6, pady=(0,14)) ══ -->
-    <div id="article-tool" class="tool-frame">
-
-      <div class="tool-hdr">
-        <div class="tool-h2">Article SEO + WordPress Tool</div>
-        <div class="tool-p">Generate clean article structure and WordPress-ready HTML.</div>
-      </div>
-
-      <!-- content: grid col(0,1) weight=1, padx=18 pady=(0,18) -->
-      <div class="art-grid">
-
-        <!-- LEFT col=0 padx=(0,9) -->
-        <div class="p-inner art-left">
-          <div class="sec-h3">Input Article</div>
-          <div class="sec-p">Paste news link or paste full article text</div>
-
-          <!-- url_entry h=42 corner=14 -->
-          <input id="url-entry" class="ctk-entry" placeholder="Paste news URL here...">
-
-          <!-- tools bar: panel-bg border corner=16 padx=16 pady=(0,12) -->
-          <div class="tools-bar">
-            <div class="tools-row">
-              <button class="ab yellow" style="width:185px;height:40px" onclick="processArticle()">Generate News Format</button>
-              <button class="ab red"    style="width:130px;height:40px" onclick="clearInput()">Clear Input</button>
-              <button class="ab green"  style="width:145px;height:40px" onclick="copyWpHtml()">Copy WP HTML</button>
-            </div>
-          </div>
-
-          <!-- input_text h=280 Consolas -->
-          <textarea id="input-text" class="ctk-box" style="height:280px;font-family:Consolas,monospace" placeholder="Paste your article here..."></textarea>
-        </div>
-
-        <!-- RIGHT col=1 padx=(9,0) -->
-        <div class="p-inner art-right">
-          <div class="sec-h3">SEO Output</div>
-
-          <!-- quick_card padx=16 pady=(0,12) -->
-          <div class="qcard-in">
-            <div class="qcard-h4">Quick Copy Sections</div>
-            <div class="qrow">
-              <button class="ab" style="width:150px;height:38px;background:#0891b2" onmouseover="this.style.background='#0e7490'" onmouseout="this.style.background='#0891b2'" onclick="copySection('Focus Keyphrase')">Focus Keyphrase</button>
-              <button class="ab" style="width:125px;height:38px;background:#7c3aed" onmouseover="this.style.background='#6d28d9'" onmouseout="this.style.background='#7c3aed'" onclick="copySection('SEO Title')">SEO Title</button>
-              <button class="ab" style="width:165px;height:38px;background:#f59e0b;color:#111" onmouseover="this.style.background='#d97706'" onmouseout="this.style.background='#f59e0b'" onclick="copySection('Meta Description')">Meta Description</button>
-            </div>
-          </div>
-
-          <!-- output_text h=420 Segoe UI size=13 -->
-          <textarea id="output-text" class="ctk-box" style="height:420px;font-family:'Segoe UI',sans-serif;font-size:13px" readonly placeholder="Formatted SEO output will appear here."></textarea>
-
-
-        </div>
-
-      </div>
-    </div><!-- /article-tool -->
-
-    <!-- ══ quick_wrap.pack(fill="x", padx=6, pady=(0,12))
-             grid_columnconfigure((0,1), weight=1)
-             BETWEEN article_tool and image_tool ══ -->
-    <div id="quick-wrap">
-
-      <!-- article_quick grid row=0 col=0 padx=(0,8) -->
-      <div class="qcard">
-        <div class="qcard-h4">Quick Copy Sections</div>
-        <div class="qcard-sub">Focus Keyphrase / SEO Title / Meta Description</div>
-        <div class="qrow" style="padding:0 12px 12px">
-          <button class="ab" style="width:160px;height:40px;background:#0891b2" onmouseover="this.style.background='#0e7490'" onmouseout="this.style.background='#0891b2'" onclick="copySection('Focus Keyphrase')">Focus Keyphrase</button>
-          <button class="ab" style="width:145px;height:40px;background:#7c3aed" onmouseover="this.style.background='#6d28d9'" onmouseout="this.style.background='#7c3aed'" onclick="copySection('SEO Title')">SEO Title</button>
-          <button class="ab" style="width:185px;height:40px;background:#f59e0b;color:#111" onmouseover="this.style.background='#d97706'" onmouseout="this.style.background='#f59e0b'" onclick="copySection('Meta Description')">Meta Description</button>
-        </div>
-      </div>
-
-      <!-- image_quick grid row=0 col=1 padx=(8,0) -->
-      <div class="qcard">
-        <div class="qcard-h4">Image Quick Copy</div>
-        <div class="qcard-sub">Copy image SEO fields fast without opening the lower panel</div>
-        <!-- image_grid: grid_columnconfigure((0,1), weight=1) -->
-        <div class="img-qgrid">
-          <button class="ab" style="background:#1d4ed8" onmouseover="this.style.background='#1e40af'" onmouseout="this.style.background='#1d4ed8'" onclick="copyImageField('alt')">Copy Alt Text</button>
-          <button class="ab" style="background:#7c3aed" onmouseover="this.style.background='#6d28d9'" onmouseout="this.style.background='#7c3aed'" onclick="copyImageField('title')">Copy Img Title</button>
-          <button class="ab" style="background:#0f766e" onmouseover="this.style.background='#115e59'" onmouseout="this.style.background='#0f766e'" onclick="copyImageField('caption')">Copy Caption</button>
-          <button class="ab" style="background:#ea580c" onmouseover="this.style.background='#c2410c'" onmouseout="this.style.background='#ea580c'" onclick="copyImageField('all')">Copy All</button>
-        </div>
-      </div>
-
-    </div><!-- /quick-wrap -->
-
-    <!-- ══ image_tool.pack(fill="both", expand=True, padx=6, pady=(0,8))
-             configure(height=980), pack_propagate(False) ══ -->
-    <div id="image-tool" class="tool-frame">
-
-      <div class="tool-hdr">
-        <div class="tool-h2">Image SEO + Crop Tool</div>
-        <div class="tool-p">ImageSEOprompt style UI with crop, export under 100KB, and quick WordPress copy.</div>
-      </div>
-
-      <!-- top_tools fill="x" padx=18 pady=(0,12) -->
-      <div id="img-top-tools">
-        <button class="ab purple" style="width:160px;height:42px" onclick="triggerUpload()">Upload Image</button>
-        <button class="ab green"  style="width:190px;height:42px" onclick="generateSeo()">Generate Image SEO</button>
-        <button class="ab blue"   style="width:180px;height:42px" onclick="copyImageField('all')">Copy All Image SEO</button>
-        <button class="ab red"    style="width:130px;height:42px" onclick="clearImageFields()">Clear All</button>
-        <input type="file" id="img-file-input" accept=".png,.jpg,.jpeg,.webp,.bmp" style="display:none" onchange="onImageSelected(event)">
-      </div>
-
-      <!-- body fill="x" expand=False padx=18 pady=(0,18) h=820
-           grid col0 weight=7 minsize=1120 / col1 weight=3 minsize=420 -->
-      <div id="img-body">
-
-        <!-- crop_frame col=0 padx=(0,9) h=820 grid_propagate(False) -->
-        <div id="crop-frame" class="p-inner">
-
-          <!-- build_crop_panel: all place() absolute -->
-          <div id="cp-title">Thumbnail Crop Tool</div>
-          <div id="cp-sub">Drag image or resize crop box. Generate SEO uses cropped image if crop exists.</div>
-
-          <!-- controls row place y=76/82/84 -->
-          <div id="cp-controls">
-            <!-- Preset 1200x366 place x=18 y=76 w=128 h=32 -->
-            <button class="ab blue" style="width:128px;height:32px;font-size:11px;border-radius:16px" onclick="setCropPreset(1200,366)">Preset 1200x366</button>
-            <!-- Preset 800x445 place x=154 y=76 w=118 h=32 -->
-            <button class="ab blue" style="width:118px;height:32px;font-size:11px;border-radius:16px" onclick="setCropPreset(800,445)">Preset 800x445</button>
-
-            <!-- lock_ratio_switch CTkSwitch progress_color=GREEN place x=294 y=82 -->
-            <div class="sw-wrap" onclick="toggleLockRatio()">
-              <div class="ctk-sw green on" id="sw-lock"><div class="sw-knob"></div></div>
-              <span class="sw-txt">Lock Ratio</span>
-            </div>
-
-            <!-- safe_zone_switch CTkSwitch progress_color=PURPLE place x=420 y=82 -->
-            <div class="sw-wrap" onclick="toggleSafeZone()">
-              <div class="ctk-sw purple on" id="sw-safe"><div class="sw-knob"></div></div>
-              <span class="sw-txt">Safe Zone</span>
-            </div>
-
-            <!-- Zoom label place x=550 y=80 -->
-            <span class="zoom-lbl">Zoom</span>
-            <!-- zoom_slider from=0.5 to=3.0 w=150 steps=250 place x=590 y=84 -->
-            <input type="range" id="zoom-slider" min="0.5" max="3.0" step="0.012" value="1.0" oninput="onZoom(this.value)">
-          </div>
-
-          <!-- canvas place x=18 y=126 w=1020 h=560 bg=#031020 -->
-          <div id="canvas-wrap">
-            <canvas id="crop-canvas"></canvas>
-          </div>
-
-          <!-- bottom buttons place y=706 -->
-          <div id="cp-btns">
-            <!-- Apply Crop green 150×36 place x=18 -->
-            <button class="ab green"  style="width:150px;height:36px" onclick="applyCrop()">Apply Crop</button>
-            <!-- Export <100KB yellow 160×36 place x=184 -->
-            <button class="ab yellow" style="width:160px;height:36px" onclick="exportUnder100kb()">Export &lt;100KB</button>
-            <!-- Clear Crop red 120×36 place x=352 -->
-            <button class="ab red"    style="width:120px;height:36px" onclick="clearCropOnly()">Clear Crop</button>
-          </div>
-
-          <!-- crop_info_label place x=18 y=748 size=12 color=#9bb4da -->
-          <div id="cp-info">No image loaded</div>
-
-        </div><!-- /crop-frame -->
-
-        <!-- right_frame col=1 padx=(9,0) h=820 grid_propagate(False) -->
-        <div id="img-right" class="p-inner">
-
-          <!-- All positions from build_right_panel() using place() -->
-
-          <!-- "Keyword / Scene Notes" label size=13 bold place x=18 y=20 -->
-          <div class="rp-lbl" style="top:20px">Keyword / Scene Notes</div>
-
-          <!-- scene_entry w=360 h=40 corner=18 place x=18 y=46 -->
-          <input id="scene-entry" class="rp-inp"
-            placeholder="Example: car review / interview / homepage banner"
-            style="top:46px;height:40px">
-
-          <!-- Copy Alt Text blue 165×36 place x=18 y=102 -->
-          <button class="ab blue"  style="width:165px;height:36px;position:absolute;left:18px;top:102px;font-size:12px" onclick="copyImageField('alt')">Copy Alt Text</button>
-          <!-- Copy Img Title blue 165×36 place x=213 y=102 -->
-          <button class="ab blue"  style="width:165px;height:36px;position:absolute;left:213px;top:102px;font-size:12px" onclick="copyImageField('title')">Copy Img Title</button>
-          <!-- Copy Caption blue 165×36 place x=18 y=150 -->
-          <button class="ab blue"  style="width:165px;height:36px;position:absolute;left:18px;top:150px;font-size:12px" onclick="copyImageField('caption')">Copy Caption</button>
-          <!-- Copy All cyan 165×36 place x=213 y=150 -->
-          <button class="ab cyan"  style="width:165px;height:36px;position:absolute;left:213px;top:150px;font-size:12px" onclick="copyImageField('all')">Copy All</button>
-
-          <!-- "Alt Text" label size=13 bold place x=18 y=206 -->
-          <div class="rp-lbl" style="top:206px">Alt Text</div>
-          <!-- alt_text CTkTextbox w=360 h=110 corner=18 place x=18 y=232 -->
-          <textarea id="alt-text" class="rp-box" style="top:232px;height:110px"></textarea>
-
-          <!-- "Img Title" label size=13 bold place x=18 y=362 -->
-          <div class="rp-lbl" style="top:362px">Img Title</div>
-          <!-- img_title_entry w=360 h=42 corner=18 place x=18 y=388 -->
-          <input id="img-title" class="rp-inp" style="top:388px;height:42px">
-
-          <!-- "Caption" label size=13 bold place x=18 y=450 -->
-          <div class="rp-lbl" style="top:450px">Caption</div>
-          <!-- caption_text CTkTextbox w=360 h=150 corner=18 place x=18 y=476 -->
-          <textarea id="caption-text" class="rp-box" style="top:476px;height:150px"></textarea>
-
-        </div><!-- /img-right -->
-
-      </div><!-- /img-body -->
-    </div><!-- /image-tool -->
-
-  </div><!-- /main-scroll -->
-</div><!-- /outer -->
-
-<!-- ══ APISettingsPopup 620×360 ══ -->
-<div id="api-backdrop" onclick="backdropClose(event)">
-  <div id="api-modal">
-    <!-- wrap padx=16 pady=16 -->
-    <!-- "Together AI API Settings" size=24 bold -->
-    <div class="m-title">Together AI API Settings</div>
-    <!-- sub size=12 -->
-    <div class="m-sub">Your key is hidden by default, tested before use, and encrypted before saving on this computer.</div>
-    <!-- api_entry show="*" h=42 corner=14 Consolas -->
-    <input type="password" id="modal-key" class="m-entry" placeholder="Paste Together AI API key here">
-    <!-- toggles -->
-    <div class="m-toggles">
-      <label class="ck"><input type="checkbox" id="cb-show" onchange="toggleShow()"> Show API key</label>
-      <label class="ck"><input type="checkbox" id="cb-save" checked> Save encrypted on this computer</label>
-    </div>
-    <!-- buttons -->
-    <div class="m-btns">
-      <button class="ab cyan"  style="width:135px;height:40px" onclick="testKey()">Test Key</button>
-      <button class="ab green" style="width:145px;height:40px" onclick="saveAndUse()">Save &amp; Use</button>
-      <button class="ab blue"  style="width:155px;height:40px" onclick="useSession()">Use This Session</button>
-      <button class="ab red"   style="width:145px;height:40px" onclick="clearKey()">Clear Saved Key</button>
-    </div>
-    <!-- tips CTkTextbox h=98 disabled -->
-    <div class="m-tips">
-      User steps:<br>
-      1. Open API Settings<br>
-      2. Paste API key<br>
-      3. Click Test Key<br>
-      4. Click Save &amp; Use<br><br>
-      If cryptography is not installed, the key can still be used for the current session, but encrypted saving will be disabled.
-    </div>
-    <!-- status h=34 corner=14 -->
-    <div id="m-status">Paste your Together AI API key to test and save</div>
+  <!-- Quick-copy pills  (Short Summary / Slug / Short Caption REMOVED; #Hashtags ADDED) -->
+  <div class="pill-bar">
+    <span class="pill-label">Quick Copy:</span>
+    <button class="pill purple" data-copy="seo_title">SEO Title</button>
+    <button class="pill cyan"   data-copy="focus_keyphrase">Focus Keyphrase</button>
+    <button class="pill yellow" data-copy="meta">Meta Description</button>
+    <button class="pill green"  data-copy="hashtags_str">#Hashtags</button>
   </div>
-</div>
 
-<div id="toast"></div>
+  <!-- Main columns -->
+  <div class="columns">
+
+    <!-- LEFT — input -->
+    <div class="panel">
+      <div class="panel-head">
+        <span class="panel-title">Input Article</span>
+        <span class="panel-sub">Paste plain text or full WordPress HTML</span>
+      </div>
+      <textarea id="inputArticle" class="article-input" spellcheck="false"
+        placeholder="Paste article text or full HTML code here…"></textarea>
+    </div>
+
+    <!-- RIGHT — output -->
+    <div class="panel">
+      <div class="panel-head">
+        <span class="panel-title">SEO Output</span>
+        <span class="panel-sub">Formatted article preview with Yoast SEO fields</span>
+      </div>
+      <div class="output-scroll" id="outputArticle">
+        <p class="placeholder-msg">Your formatted output will appear here after generation.</p>
+      </div>
+
+      <!-- Options grid: 4 columns -->
+      <div class="options-grid">
+
+        <div class="opt-col">
+          <div class="opt-label">SEO Title Options</div>
+          <div class="opt-box green-text" id="optTitles"></div>
+        </div>
+
+        <div class="opt-col">
+          <div class="opt-label">Meta + SEO Fields</div>
+          <div class="opt-box green-text" id="optMeta"></div>
+        </div>
+
+        <div class="opt-col">
+          <div class="opt-label">Short Caption (H1·H2·H3)</div>
+          <div class="opt-box blue-text" id="optCaption"></div>
+        </div>
+
+        <div class="opt-col">
+          <div class="opt-label">#Hashtags (6–8 tags)</div>
+          <div class="opt-box amber-text" id="optHashtags"></div>
+        </div>
+
+      </div><!-- /options-grid -->
+    </div><!-- /panel right -->
+
+  </div><!-- /columns -->
+</section>
+
+<!-- ════════════════════════════════════════════════════
+     TAB 2 — IMAGE SEO
+════════════════════════════════════════════════════ -->
+<section class="tab-panel" id="tab-img">
+
+  <div class="action-bar">
+    <button class="btn purple" id="btnUpload">⬆ Upload Image</button>
+    <button class="btn green"  id="btnGenImg">⚡ Generate SEO</button>
+    <button class="btn teal"   id="btnCopyAll">⧉ Copy All SEO</button>
+    <button class="btn red"    id="btnClearImg">✕ Clear</button>
+    <input type="file" id="fileInput" accept="image/*" style="display:none"/>
+  </div>
+
+  <div class="img-columns">
+
+    <!-- LEFT — crop canvas -->
+    <div class="panel crop-panel">
+      <div class="panel-head">
+        <span class="panel-title">Image Preview &amp; Crop</span>
+        <span class="panel-sub">Upload an image to preview and crop</span>
+      </div>
+
+      <!-- Preset buttons -->
+      <div class="preset-bar">
+        <button class="btn-sm blue" data-ratio="1200,366">1200×366</button>
+        <button class="btn-sm blue" data-ratio="800,445">800×445</button>
+        <button class="btn-sm blue" data-ratio="1,1">1:1</button>
+        <button class="btn-sm blue" data-ratio="16,9">16:9</button>
+        <button class="btn-sm blue" data-ratio="4,3">4:3</button>
+        <label class="toggle-label">
+          <input type="checkbox" id="lockRatio" checked/> Lock Ratio
+        </label>
+        <label class="toggle-label">
+          <input type="checkbox" id="safeZone" checked/> Safe Zone
+        </label>
+        <span class="zoom-label">Zoom</span>
+        <input type="range" id="zoomSlider" min="50" max="300" value="100" step="1"/>
+      </div>
+
+      <!-- Canvas wrapper -->
+      <div class="canvas-wrap" id="canvasWrap">
+        <canvas id="cropCanvas"></canvas>
+        <div class="canvas-placeholder" id="canvasPlaceholder">
+          <div class="canvas-icon">🖼</div>
+          <div>Upload an image to begin</div>
+        </div>
+      </div>
+
+      <!-- Bottom bar -->
+      <div class="crop-bot">
+        <button class="btn-sm green"  id="btnApplyCrop">✔ Apply Crop</button>
+        <button class="btn-sm yellow" id="btnExport">💾 Export &lt;100KB</button>
+        <button class="btn-sm red"    id="btnClearCrop">✕ Clear Crop</button>
+        <span class="crop-info" id="cropInfo">No image loaded</span>
+      </div>
+    </div>
+
+    <!-- RIGHT — SEO fields -->
+    <div class="panel seo-fields-panel">
+      <div class="panel-head">
+        <span class="panel-title">Image SEO Fields</span>
+        <span class="panel-sub">AI-generated via Together AI</span>
+      </div>
+
+      <label class="field-label">KEYWORD / SCENE NOTES</label>
+      <input type="text" id="sceneInput" class="field-input"
+             placeholder="car review / homepage banner…"/>
+
+      <div class="copy-grid">
+        <button class="btn-sm blue" id="cAlt">⧉ Alt Text</button>
+        <button class="btn-sm blue" id="cTitle">⧉ Img Title</button>
+        <button class="btn-sm blue" id="cCap">⧉ Caption</button>
+        <button class="btn-sm teal" id="cAll">⧉ Copy All</button>
+      </div>
+
+      <label class="field-label">ALT TEXT</label>
+      <textarea id="altText" class="field-area" rows="3"></textarea>
+
+      <label class="field-label">IMAGE TITLE</label>
+      <input type="text" id="imgTitle" class="field-input"/>
+
+      <label class="field-label">CAPTION</label>
+      <textarea id="caption" class="field-area" style="flex:1;min-height:80px"></textarea>
+    </div>
+
+  </div>
+</section>
+
+<!-- ░░ STATUS BAR ░░ -->
+<div class="status-bar" id="statusBar">Ready</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
 <script src="/static/script.js"></script>
 </body>
 </html>
