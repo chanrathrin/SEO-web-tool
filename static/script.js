@@ -1,12 +1,12 @@
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => [...document.querySelectorAll(sel)];
 
+const STORAGE_KEY = "wpseostudio_together_api_key";
+
 const state = {
   seoData: null,
-  image: null,
   imageName: "",
   originalImage: null,
-  workingImage: null,
   croppedBlob: null,
   crop: null,
   drag: null,
@@ -14,12 +14,23 @@ const state = {
   aspectRatio: null,
   safeZone: true,
   lockRatio: true,
+  apiKey: "",
 };
 
 const els = {
   apiBadge: $("#apiBadge"),
   statusBar: $("#statusBar"),
   toast: $("#toast"),
+
+  openApiModal: $("#openApiModal"),
+  apiModal: $("#apiModal"),
+  closeApiModal: $("#closeApiModal"),
+  apiKeyInput: $("#apiKeyInput"),
+  showApiKey: $("#showApiKey"),
+  btnTestApi: $("#btnTestApi"),
+  btnSaveApi: $("#btnSaveApi"),
+  btnClearApi: $("#btnClearApi"),
+  apiModalStatus: $("#apiModalStatus"),
 
   tabBtns: $$(".tab-btn"),
   panels: $$(".tab-panel"),
@@ -81,6 +92,14 @@ function setBadge(mode, text) {
   els.apiBadge.textContent = text;
 }
 
+function refreshApiBadge() {
+  if (state.apiKey) {
+    setBadge("ready", "● User API Saved");
+  } else {
+    setBadge("ready", "○ Ready");
+  }
+}
+
 function toast(msg) {
   els.toast.textContent = msg;
   els.toast.classList.add("show");
@@ -129,6 +148,86 @@ function switchTab(tab) {
 els.tabBtns.forEach(btn => {
   btn.addEventListener("click", () => switchTab(btn.dataset.tab));
 });
+
+
+function openApiModal() {
+  els.apiModal.classList.remove("hidden");
+  els.apiKeyInput.value = state.apiKey || "";
+  els.apiModalStatus.textContent = state.apiKey ? "Saved key loaded from browser" : "No key saved";
+}
+
+function closeApiModal() {
+  els.apiModal.classList.add("hidden");
+}
+
+function loadApiKey() {
+  state.apiKey = localStorage.getItem(STORAGE_KEY) || "";
+  refreshApiBadge();
+}
+
+function saveApiKey() {
+  const key = els.apiKeyInput.value.trim();
+  if (!key) {
+    els.apiModalStatus.textContent = "API key is empty";
+    return;
+  }
+  localStorage.setItem(STORAGE_KEY, key);
+  state.apiKey = key;
+  refreshApiBadge();
+  els.apiModalStatus.textContent = "API key saved in browser";
+  toast("API key saved");
+  setStatus("API key saved");
+}
+
+function clearApiKey() {
+  localStorage.removeItem(STORAGE_KEY);
+  state.apiKey = "";
+  els.apiKeyInput.value = "";
+  refreshApiBadge();
+  els.apiModalStatus.textContent = "Saved API key cleared";
+  toast("API key cleared");
+  setStatus("API key cleared");
+}
+
+async function testApiKey() {
+  const key = els.apiKeyInput.value.trim();
+  if (!key) {
+    els.apiModalStatus.textContent = "Paste API key first";
+    return;
+  }
+
+  els.apiModalStatus.textContent = "Testing API key...";
+  try {
+    const res = await fetch("/api/ping-key", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({ api_key: key })
+    });
+
+    const data = await res.json();
+    if (!res.ok || !data.ok) {
+      throw new Error(data.error || "Invalid API key");
+    }
+
+    els.apiModalStatus.textContent = "API key is valid";
+    toast("API key valid");
+  } catch (err) {
+    els.apiModalStatus.textContent = err.message;
+    toast("API key failed");
+  }
+}
+
+els.openApiModal.addEventListener("click", openApiModal);
+els.closeApiModal.addEventListener("click", closeApiModal);
+els.apiModal.addEventListener("click", (e) => {
+  if (e.target === els.apiModal) closeApiModal();
+});
+els.showApiKey.addEventListener("change", () => {
+  els.apiKeyInput.type = els.showApiKey.checked ? "text" : "password";
+});
+els.btnSaveApi.addEventListener("click", saveApiKey);
+els.btnClearApi.addEventListener("click", clearApiKey);
+els.btnTestApi.addEventListener("click", testApiKey);
 
 
 function renderSEO(data) {
@@ -201,8 +300,8 @@ async function generateSEO() {
     if (!res.ok) throw new Error(data.error || "SEO generation failed");
 
     renderSEO(data);
+    refreshApiBadge();
     setStatus("SEO output generated ✓");
-    setBadge("ready", "○ Ready");
     toast("SEO generated");
   } catch (err) {
     setStatus(err.message);
@@ -244,9 +343,7 @@ $$(".pill").forEach(btn => {
 });
 
 
-// ─────────────────────────────────────────────────────────────
-// Image / Crop
-// ─────────────────────────────────────────────────────────────
+// IMAGE / CROP
 function fitCanvasToWrap() {
   const rect = els.canvasWrap.getBoundingClientRect();
   const dpr = window.devicePixelRatio || 1;
@@ -262,14 +359,14 @@ function defaultCropRect() {
   const rect = els.canvasWrap.getBoundingClientRect();
   const w = rect.width;
   const h = rect.height;
-  const rw = Math.min(w * 0.52, 520);
-  const rh = state.aspectRatio ? rw / state.aspectRatio : h * 0.52;
+  const rw = Math.min(w * 0.55, 620);
+  const rh = state.aspectRatio ? rw / state.aspectRatio : h * 0.55;
 
   let finalW = rw;
   let finalH = rh;
 
-  if (finalH > h * 0.72) {
-    finalH = h * 0.72;
+  if (finalH > h * 0.74) {
+    finalH = h * 0.74;
     finalW = state.aspectRatio ? finalH * state.aspectRatio : rw;
   }
 
@@ -312,7 +409,7 @@ function drawCanvas() {
 
   ctx.save();
   ctx.strokeStyle = "#4f8dff";
-  ctx.lineWidth = 1.4;
+  ctx.lineWidth = 1.8;
   ctx.strokeRect(state.crop.x, state.crop.y, state.crop.w, state.crop.h);
 
   const thirdX = state.crop.w / 3;
@@ -347,7 +444,7 @@ function drawCanvas() {
     ctx.setLineDash([]);
   }
 
-  const hs = 8;
+  const hs = 10;
   const corners = [
     [state.crop.x, state.crop.y],
     [state.crop.x + state.crop.w, state.crop.y],
@@ -372,7 +469,7 @@ function pointerPos(evt) {
 
 function hitCorner(pos) {
   if (!state.crop) return null;
-  const hs = 12;
+  const hs = 14;
   const pts = {
     tl: { x: state.crop.x, y: state.crop.y },
     tr: { x: state.crop.x + state.crop.w, y: state.crop.y },
@@ -546,7 +643,6 @@ function loadImageFile(file) {
   const img = new Image();
   img.onload = () => {
     state.originalImage = img;
-    state.workingImage = img;
     state.croppedBlob = null;
     state.zoom = 1;
     els.zoomSlider.value = "100";
@@ -674,7 +770,6 @@ els.btnExport.addEventListener("click", async () => {
 
 function clearImageTool() {
   state.originalImage = null;
-  state.workingImage = null;
   state.croppedBlob = null;
   state.crop = null;
   state.drag = null;
@@ -712,9 +807,17 @@ async function generateImageSEO() {
     return;
   }
 
+  if (!state.apiKey) {
+    openApiModal();
+    els.apiModalStatus.textContent = "Put your API key first";
+    setStatus("Need user API key");
+    return;
+  }
+
   const fd = new FormData();
   fd.append("image", imageBlob, "image.jpg");
   fd.append("keyword", els.sceneInput.value.trim());
+  fd.append("api_key", state.apiKey);
 
   setStatus("Generating image SEO...");
   setBadge("busy", "◌ Working");
@@ -732,8 +835,8 @@ async function generateImageSEO() {
     els.imgTitle.value = data.img_title || "";
     els.caption.value = data.caption || "";
 
+    refreshApiBadge();
     setStatus(`Image SEO generated ✓`);
-    setBadge("ready", "○ Ready");
     toast("Image SEO generated");
   } catch (err) {
     setStatus(err.message);
@@ -767,7 +870,8 @@ els.cAll.addEventListener("click", () => {
 
 window.addEventListener("resize", fitCanvasToWrap);
 window.addEventListener("load", () => {
-  setBadge("ready", "○ Ready");
+  loadApiKey();
   clearSEOOutput();
   clearImageTool();
+  setStatus("Ready");
 });
