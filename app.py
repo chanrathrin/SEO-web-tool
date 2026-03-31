@@ -688,7 +688,7 @@ def api_image_seo():
                 "model": model,
             })
 
-        except Exception as e
+        except Exception as e:
             errors.append(str(e))
 
     return jsonify({"error": " | ".join(errors)[:900] or "Image SEO request failed."}), 502
