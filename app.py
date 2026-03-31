@@ -2,29 +2,48 @@
 WordPress SEO Studio — Flask Backend
 API key is stored server-side in .env and never exposed to the browser.
 """
-import os, io, re, json, base64, time
-from flask import Flask, request, jsonify, render_template, abort
-import requests
-from dotenv import load_dotenv
-from PIL import Image, ImageEnhance
+import os
+import io
+import re
+import json
+import base64
+import time
 
-load_dotenv()
+from flask import Flask, request, jsonify, render_template
+import requests
+from PIL import Image
+
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
 
 app = Flask(__name__)
-app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024   # 16 MB upload limit
+app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024  # 16 MB upload limit
 
-TOGETHER_BASE_URL     = "https://api.together.xyz/v1"
-VISION_MODEL          = "moonshotai/Kimi-K2.5"
+TOGETHER_BASE_URL = "https://api.together.xyz/v1"
+VISION_MODEL = "moonshotai/Kimi-K2.5"
 VISION_FALLBACK_MODEL = "Qwen/Qwen3-VL-8B-Instruct"
-TOGETHER_API_KEY      = os.getenv("TOGETHER_API_KEY", "")
+TOGETHER_API_KEY = os.getenv("TOGETHER_API_KEY", "")
 
-RATE_LIMIT: dict = {}   # simple in-process rate limiter ip→timestamp list
+RATE_LIMIT = {}  # simple in-process rate limiter ip -> timestamp list
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 def _headers():
-    return {"Authorization": f"Bearer {TOGETHER_API_KEY}",
-            "Content-Type": "application/json"}
+    return {
+        "Authorization": f"Bearer {TOGETHER_API_KEY}",
+        "Content-Type": "application/json",
+    }
+
+
+def _get_client_ip():
+    forwarded = request.headers.get("X-Forwarded-For", "").strip()
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.remote_addr or "unknown"
 
 
 def _rate_ok(ip: str, max_per_min: int = 10) -> bool:
@@ -37,14 +56,14 @@ def _rate_ok(ip: str, max_per_min: int = 10) -> bool:
     return True
 
 
-def _together_chat(model, messages, temperature=0.6,
-                   top_p=0.95, response_format=None, reasoning=None):
+def _together_chat(model, messages, temperature=0.6, top_p=0.95, response_format=None, reasoning=None):
     payload = {
         "model": model,
         "messages": messages,
         "temperature": temperature,
         "top_p": top_p,
     }
+
     if response_format:
         payload["response_format"] = response_format
     if reasoning is not None:
@@ -52,7 +71,9 @@ def _together_chat(model, messages, temperature=0.6,
 
     r = requests.post(
         f"{TOGETHER_BASE_URL}/chat/completions",
-        headers=_headers(), json=payload, timeout=90
+        headers=_headers(),
+        json=payload,
+        timeout=90,
     )
     r.raise_for_status()
     return r.json()
@@ -62,28 +83,44 @@ def _extract(resp):
     choices = resp.get("choices") or []
     if not choices:
         return ""
+
     msg = choices[0].get("message") or {}
     content = msg.get("content", "")
+
     if isinstance(content, list):
         return "\n".join(
-            str(i.get("text") or i.get("content") or "")
-            for i in content if i
+            str(item.get("text") or item.get("content") or "")
+            for item in content if item
         ).strip()
+
     return str(content or "").strip()
 
 
 def _parse_json(raw: str) -> dict:
     raw = raw.strip()
-    for candidate in [raw, raw.replace("```json","").replace("```","").strip()]:
-        m = re.search(r"\{.*\}", candidate, re.DOTALL)
-        blob = m.group(0) if m else candidate
+    candidates = [
+        raw,
+        raw.replace("```json", "").replace("```", "").strip(),
+    ]
+
+    for candidate in candidates:
+        match = re.search(r"\{.*\}", candidate, re.DOTALL)
+        blob = match.group(0) if match else candidate
         try:
-            d = json.loads(blob)
-            if isinstance(d, dict):
-                return d
+            data = json.loads(blob)
+            if isinstance(data, dict):
+                return data
         except Exception:
             pass
+
     raise ValueError("Cannot parse model JSON: " + raw[:200])
+
+
+def _clean_text(value, max_len):
+    text = str(value or "").strip()
+    text = text.replace("featured image", "").replace("Featured Image", "")
+    text = " ".join(text.split())
+    return text[:max_len].strip(" -,:")
 
 
 # ── routes ────────────────────────────────────────────────────────────────────
@@ -95,30 +132,32 @@ def index():
 @app.route("/api/image-seo", methods=["POST"])
 def image_seo():
     """Receive image + keyword, call Together AI vision, return SEO fields."""
-    ip = request.remote_addr
+    ip = _get_client_ip()
     if not _rate_ok(ip):
         return jsonify({"error": "Rate limit exceeded — try again in a minute."}), 429
 
     if not TOGETHER_API_KEY:
         return jsonify({"error": "Server API key not configured."}), 500
 
-    file    = request.files.get("image")
+    file = request.files.get("image")
     keyword = request.form.get("keyword", "image SEO").strip() or "image SEO"
 
     if not file:
         return jsonify({"error": "No image uploaded."}), 400
 
-    # Resize to max 1024px on longest side to keep payload small
     try:
         img = Image.open(file.stream).convert("RGB")
         w, h = img.size
         max_dim = 1024
+
         if max(w, h) > max_dim:
             scale = max_dim / max(w, h)
             img = img.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
+
         buf = io.BytesIO()
         img.save(buf, "JPEG", quality=85)
         data_url = "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode()
+
     except Exception as e:
         return jsonify({"error": f"Image processing failed: {e}"}), 400
 
@@ -140,25 +179,31 @@ def image_seo():
     for model in [VISION_MODEL, VISION_FALLBACK_MODEL]:
         try:
             extra = {"reasoning": {"enabled": False}} if "Kimi" in model else {}
-            resp  = _together_chat(
+
+            resp = _together_chat(
                 model,
-                messages=[{"role": "user", "content": [
-                    {"type": "text", "text": prompt},
-                    {"type": "image_url", "image_url": {"url": data_url}},
-                ]}],
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": prompt},
+                            {"type": "image_url", "image_url": {"url": data_url}},
+                        ],
+                    }
+                ],
                 response_format={"type": "json_object"},
                 **extra,
             )
+
             data = _parse_json(_extract(resp))
-            def _s(t, mx):
-                t = str(t).strip().replace("featured image","").replace("Featured Image","")
-                return " ".join(t.split())[:mx].strip(" -,:")
+
             return jsonify({
-                "alt_text":  _s(data.get("alt_text",""),  60),
-                "img_title": _s(data.get("img_title",""), 80),
-                "caption":   _s(data.get("caption",""),  180),
-                "model":     model,
+                "alt_text": _clean_text(data.get("alt_text", ""), 60),
+                "img_title": _clean_text(data.get("img_title", ""), 80),
+                "caption": _clean_text(data.get("caption", ""), 180),
+                "model": model,
             })
+
         except Exception as e:
             last_err = e
 
@@ -173,11 +218,13 @@ def seo_format():
     Returns all SEO fields including hashtags.
     """
     body = request.get_json(silent=True) or {}
-    raw  = (body.get("text") or "").strip()
+    raw = (body.get("text") or "").strip()
+
     if not raw:
         return jsonify({"error": "No text provided."}), 400
 
     from seo_logic import process_text
+
     try:
         result = process_text(raw)
         return jsonify(result)
