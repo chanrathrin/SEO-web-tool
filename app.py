@@ -1,955 +1,189 @@
-import os
-import io
-import re
-import json
-import html
-import base64
-import tempfile
+"""
+WordPress SEO Studio — Flask Backend
+API key is stored server-side in .env and never exposed to the browser.
+"""
+import os, io, re, json, base64, time
+from flask import Flask, request, jsonify, render_template, abort
 import requests
-import threading
-from flask import Flask, request, jsonify, render_template, send_from_directory
+from dotenv import load_dotenv
+from PIL import Image, ImageEnhance
+
+load_dotenv()
 
 app = Flask(__name__)
-app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024
+app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024   # 16 MB upload limit
 
-TOGETHER_BASE_URL = "https://api.together.xyz/v1"
-ARTICLE_MODEL = "Qwen/Qwen2.5-7B-Instruct-Turbo"
-VISION_MODEL = "moonshotai/Kimi-K2.5"
+TOGETHER_BASE_URL     = "https://api.together.xyz/v1"
+VISION_MODEL          = "moonshotai/Kimi-K2.5"
 VISION_FALLBACK_MODEL = "Qwen/Qwen3-VL-8B-Instruct"
+TOGETHER_API_KEY      = os.getenv("TOGETHER_API_KEY", "")
+
+RATE_LIMIT: dict = {}   # simple in-process rate limiter ip→timestamp list
 
 
-def together_headers(api_key):
-    return {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
+# ── helpers ───────────────────────────────────────────────────────────────────
+def _headers():
+    return {"Authorization": f"Bearer {TOGETHER_API_KEY}",
+            "Content-Type": "application/json"}
+
+
+def _rate_ok(ip: str, max_per_min: int = 10) -> bool:
+    now = time.time()
+    hits = [t for t in RATE_LIMIT.get(ip, []) if now - t < 60]
+    RATE_LIMIT[ip] = hits
+    if len(hits) >= max_per_min:
+        return False
+    RATE_LIMIT[ip].append(now)
+    return True
+
+
+def _together_chat(model, messages, temperature=0.6,
+                   top_p=0.95, response_format=None, reasoning=None):
+    payload = {
+        "model": model,
+        "messages": messages,
+        "temperature": temperature,
+        "top_p": top_p,
     }
+    if response_format:
+        payload["response_format"] = response_format
+    if reasoning is not None:
+        payload["reasoning"] = reasoning
 
-
-def verify_together_api_key(api_key, timeout=20):
-    response = requests.get(
-        f"{TOGETHER_BASE_URL}/models",
-        headers=together_headers(api_key),
-        timeout=timeout,
+    r = requests.post(
+        f"{TOGETHER_BASE_URL}/chat/completions",
+        headers=_headers(), json=payload, timeout=90
     )
-    if response.status_code >= 400:
-        try:
-            data = response.json()
-            detail = data.get("error", {}).get("message") or data.get("message") or response.text
-        except Exception:
-            detail = response.text
-        raise RuntimeError(f"HTTP {response.status_code}: {detail}")
-    return response.json()
+    r.raise_for_status()
+    return r.json()
 
 
-def together_chat_completion(api_key, model, messages, temperature=0.3, timeout=60, retries=3):
-    payload = {"model": model, "messages": messages, "temperature": temperature}
-    last_err = None
-    for attempt in range(retries):
-        try:
-            response = requests.post(
-                f"{TOGETHER_BASE_URL}/chat/completions",
-                headers=together_headers(api_key),
-                json=payload,
-                timeout=timeout,
-            )
-            if response.status_code >= 400:
-                try:
-                    data = response.json()
-                    detail = data.get("error", {}).get("message") or data.get("message") or response.text
-                except Exception:
-                    detail = response.text
-                raise RuntimeError(f"HTTP {response.status_code}: {detail}")
-            return response.json()
-        except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
-            last_err = e
-            if attempt < retries - 1:
-                import time
-                time.sleep(2 ** attempt)  # 1s, 2s, 4s backoff
-            continue
-        except RuntimeError:
-            raise
-    raise RuntimeError(f"Failed after {retries} attempts: {last_err}")
-
-
-def extract_message_content(response_json):
-    choices = response_json.get("choices") or []
+def _extract(resp):
+    choices = resp.get("choices") or []
     if not choices:
         return ""
-    message = choices[0].get("message") or {}
-    content = message.get("content", "")
+    msg = choices[0].get("message") or {}
+    content = msg.get("content", "")
     if isinstance(content, list):
-        parts = []
-        for item in content:
-            if isinstance(item, dict):
-                txt = item.get("text") or item.get("content") or ""
-                if txt:
-                    parts.append(str(txt))
-            elif item:
-                parts.append(str(item))
-        return "\n".join(parts).strip()
+        return "\n".join(
+            str(i.get("text") or i.get("content") or "")
+            for i in content if i
+        ).strip()
     return str(content or "").strip()
 
 
-# ─── Article Processing Logic ───────────────────────────────────────────────
-
-def normalize_space(text):
-    return re.sub(r"\s+", " ", text or "").strip()
-
-def normalize_compare_text(text):
-    text = (text or "").lower().strip()
-    text = re.sub(r"[\"'\u201c\u201d\u2018\u2019`]+", "", text)
-    text = re.sub(r"[^a-z0-9\s]", " ", text)
-    return re.sub(r"\s+", " ", text).strip()
-
-def trim_at_word_boundary(text, limit):
-    text = normalize_space(text)
-    if len(text) <= limit:
-        return text
-    cut = text[:limit].rstrip()
-    if " " in cut:
-        cut = cut.rsplit(" ", 1)[0]
-    return cut.rstrip(" ,.-:;")
-
-def clean_lines(text):
-    text = (text or "").replace("\r\n", "\n").replace("\r", "\n")
-    text = re.sub(r"\u00a0", " ", text)
-    text = re.sub(r"[ \t]+", " ", text)
-    raw_lines = [line.strip() for line in text.split("\n")]
-    cleaned = []
-    last_blank = True
-    for line in raw_lines:
-        low = line.lower().strip()
-        if low in ("paste your article here...", "paste your article here."):
-            continue
-        if not line:
-            if not last_blank:
-                cleaned.append("")
-            last_blank = True
-            continue
-        if cleaned and cleaned[-1] and normalize_compare_text(cleaned[-1]) == normalize_compare_text(line):
-            continue
-        cleaned.append(line)
-        last_blank = False
-    while cleaned and cleaned[-1] == "":
-        cleaned.pop()
-    return cleaned
-
-def strip_internal_seo_lines(lines):
-    seo_prefixes = ("Focus Keyphrase:","SEO Title:","Meta Description:","Slug (URL):","Slug:","Short Summary:")
-    cleaned = []
-    for line in lines:
-        s = line.strip()
-        if any(s.startswith(prefix) for prefix in seo_prefixes):
-            continue
-        cleaned.append(line)
-    while cleaned and cleaned[-1] == "":
-        cleaned.pop()
-    return cleaned
-
-def guess_title(lines):
-    if not lines:
-        return "Untitled Article"
-    title = normalize_space(lines[0])
-    return trim_at_word_boundary(title, 140) or "Untitled Article"
-
-def build_intro(lines):
-    content = [line for line in lines[1:] if line.strip()]
-    if not content:
-        return ""
-    intro_parts = []
-    for line in content:
-        intro_parts.append(line)
-        joined = " ".join(intro_parts).strip()
-        if len(joined) >= 180 or line.endswith((".", "!", "?")):
-            break
-    return trim_at_word_boundary(" ".join(intro_parts).strip(), 240)
-
-def remove_heading_from_body(heading, body):
-    body = normalize_space(body)
-    heading = normalize_space(heading)
-    if not heading or not body:
-        return body
-    body_words = body.split()
-    heading_words = heading.split()
-    compare_len = min(len(body_words), len(heading_words))
-    matched = 0
-    for i in range(compare_len):
-        if normalize_compare_text(body_words[i]) == normalize_compare_text(heading_words[i]):
-            matched += 1
-        else:
-            break
-    if matched >= max(3, len(heading_words) - 1):
-        remaining = " ".join(body_words[matched:]).lstrip(" ,.;:-\u2013\u2014)")
-        return remaining or body
-    return body
-
-def extract_body_paragraphs(lines):
-    paragraphs = []
-    current = []
-    content_lines = lines[1:] if len(lines) > 1 else []
-    for line in content_lines:
-        if not line.strip():
-            if current:
-                paragraphs.append(normalize_space(" ".join(current)))
-                current = []
-        else:
-            current.append(line.strip())
-    if current:
-        paragraphs.append(normalize_space(" ".join(current)))
-    if not paragraphs:
-        paragraphs = [normalize_space(line) for line in content_lines if line.strip()]
-    intro = build_intro(lines)
-    filtered = []
-    for idx, para in enumerate(paragraphs):
-        if not para:
-            continue
-        if idx == 0 and intro:
-            para = remove_heading_from_body(intro, para)
-        if para:
-            filtered.append(para)
-    return filtered
-
-def split_body_into_sections(lines, num_sections=None):
-    blocks = extract_body_paragraphs(lines)
-    if not blocks:
-        return []
-    if num_sections is None:
-        if len(blocks) >= 6:
-            num_sections = 3
-        elif len(blocks) >= 3:
-            num_sections = 2
-        else:
-            num_sections = 1
-    if len(blocks) <= num_sections:
-        return blocks[:num_sections]
-    target = min(num_sections, len(blocks))
-    base = len(blocks) // target
-    extra = len(blocks) % target
-    sections = []
-    idx = 0
-    for i in range(target):
-        take = base + (1 if i < extra else 0)
-        chunk = blocks[idx:idx + take]
-        idx += take
-        merged = "\n\n".join(chunk).strip()
-        if merged:
-            sections.append(merged)
-    return sections[:3]
-
-def clean_heading_candidate(text):
-    text = re.sub(r"\s+", " ", text or "").strip()
-    text = text.strip(' "\'""''.,:;!?-')
-    text = re.sub(r"^[^A-Za-z0-9]+", "", text)
-    text = re.sub(r"[^A-Za-z0-9]+$", "", text)
-    return text
-
-def sentence_candidates_from_text(text):
-    sentences = re.split(r'(?<=[.!?])\s+', (text or "").replace("\n", " "))
-    out = []
-    for s in sentences:
-        s = clean_heading_candidate(s)
-        if not s:
-            continue
-        wc = len(s.split())
-        if 4 <= wc <= 12:
-            out.append(s)
-    return out
-
-def phrase_candidates_from_text(text):
-    words = [w for w in clean_heading_candidate(text).split() if w]
-    candidates = []
-    for length in (5, 6, 7, 8):
-        if len(words) >= length:
-            candidates.append(" ".join(words[:length]))
-    return candidates
-
-def choose_heading_from_text(text, seen):
-    candidates = sentence_candidates_from_text(text)
-    if not candidates:
-        candidates = phrase_candidates_from_text(text)
-    ranked = []
-    for cand in candidates:
-        cleaned = clean_heading_candidate(cand)
-        if not cleaned:
-            continue
-        words = cleaned.split()
-        if len(words) < 4:
-            continue
-        if len(words) > 10:
-            cleaned = " ".join(words[:10]).strip()
-            words = cleaned.split()
-        key = cleaned.lower()
-        score = 0
-        if 6 <= len(words) <= 10:
-            score += 5
-        elif len(words) == 5:
-            score += 4
-        elif len(words) == 4:
-            score += 3
-        if len(cleaned) >= 32:
-            score += 2
-        if not cleaned.endswith((":", ",", "-")):
-            score += 1
-        ranked.append((score, cleaned, key))
-    ranked.sort(key=lambda x: (-x[0], -len(x[1]), x[1]))
-    for _, cand, key in ranked:
-        if key in seen:
-            continue
-        seen.add(key)
-        return cand
-    return ""
-
-def make_question_heading(text, idx):
-    """Convert a heading/phrase into a question-style H2 like news sites."""
-    text = clean_heading_candidate(text)
-    words = text.split()
-    if not words:
-        return f"Section {idx}"
-
-    # Already a question
-    if text.endswith("?"):
-        return text
-
-    # Detect topic keywords and form questions
-    low = text.lower()
-    if any(w in low for w in ["why", "what", "how", "when", "who", "where"]):
-        return text + "?" if not text.endswith("?") else text
-
-    # Build question from phrase
-    question_prefixes = [
-        "What Is", "What Are", "How Does", "Why Did", "What Happened With",
-        "What Comes Next for", "What This Means for",
-    ]
-    # Pick prefix based on content hints
-    if any(w in low for w in ["next", "future", "ahead", "plan"]):
-        prefix = "What Comes Next for"
-    elif any(w in low for w in ["impact", "effect", "mean", "implication"]):
-        prefix = "What This Means for"
-    elif any(w in low for w in ["why", "reason", "cause", "trigger"]):
-        prefix = "Why Did"
-    elif any(w in low for w in ["how", "operation", "update", "key"]):
-        prefix = "How"
-    elif any(w in low for w in ["who", "leader", "president", "minister"]):
-        prefix = "Who Is"
-    else:
-        prefix = "What Is"
-
-    # Keep heading concise
-    core = " ".join(words[:8])
-    h2 = f"{prefix} {core}?"
-
-    # Clean up double words (e.g. "What Is What Is...")
-    for p in question_prefixes:
-        p_low = p.lower()
-        if low.startswith(p_low):
-            h2 = text + "?" if not text.endswith("?") else text
-            break
-
-    return h2
+def _parse_json(raw: str) -> dict:
+    raw = raw.strip()
+    for candidate in [raw, raw.replace("```json","").replace("```","").strip()]:
+        m = re.search(r"\{.*\}", candidate, re.DOTALL)
+        blob = m.group(0) if m else candidate
+        try:
+            d = json.loads(blob)
+            if isinstance(d, dict):
+                return d
+        except Exception:
+            pass
+    raise ValueError("Cannot parse model JSON: " + raw[:200])
 
 
-def build_nested_article_structure(sections):
-    structure = []
-    seen = set()
-    for idx, section in enumerate([s.strip() for s in sections if s and s.strip()][:3], start=1):
-        h2_raw = choose_heading_from_text(section, seen)
-        if not h2_raw:
-            words = clean_heading_candidate(section).split()
-            h2_raw = " ".join(words[:10]).strip() or f"Section {idx}"
-        h2 = make_question_heading(h2_raw, idx)
-        body = remove_heading_from_body(h2_raw, section).strip()
-        body = body or normalize_space(section)
-        paragraphs = [p.strip() for p in body.split("\n\n") if p.strip()]
-        if not paragraphs:
-            paragraphs = [body]
-        subsection_body = "\n\n".join(paragraphs)
-        structure.append({"h2": h2, "subsections": [{"h3": h2, "body": subsection_body}]})
-    return structure[:3]
-
-def make_slug(title):
-    slug = re.sub(r"[^a-z0-9\s-]", "", (title or "").lower())
-    slug = re.sub(r"\s+", "-", slug).strip("-")
-    slug = re.sub(r"-{2,}", "-", slug)
-    return slug[:80] or "news-update"
-
-def make_focus_keyphrase(title):
-    cleaned = re.sub(r"[^\w\s-]", "", title or "").strip()
-    words = cleaned.split()
-    return " ".join(words[:5]).strip() or "news update"
-
-def make_seo_title_options(title):
-    base = normalize_space(title)
-    if not base:
-        return []
-    opts = [
-        trim_at_word_boundary(base, 60),
-        trim_at_word_boundary(base + " | Key Updates", 60),
-        trim_at_word_boundary(base + " | Full Report", 60),
-    ]
-    out, seen = [], set()
-    for x in opts:
-        key = x.lower()
-        if x and key not in seen:
-            out.append(x)
-            seen.add(key)
-    return out[:3]
-
-def make_meta_options(intro, title):
-    source = normalize_space(intro if intro else title)
-    if not source:
-        return []
-    opts = [
-        trim_at_word_boundary(source, 160),
-        trim_at_word_boundary((title or "") + " \u2014 " + source, 160),
-    ]
-    out, seen = [], set()
-    for x in opts:
-        key = x.lower()
-        if x and key not in seen:
-            out.append(x)
-            seen.add(key)
-    return out[:2]
-
-def make_short_summary(intro, structure):
-    source = normalize_space(intro)
-    if not source and structure:
-        for sec in structure:
-            for sub in sec.get("subsections", []):
-                body = normalize_space(sub.get("body", ""))
-                if body:
-                    source = body
-                    break
-            if source:
-                break
-    return trim_at_word_boundary(source, 180)
-
-def build_seo_source_text(h1, intro, structure):
-    parts = []
-    if h1:
-        parts.append(f"Title: {h1}")
-    if intro:
-        parts.append(f"Intro: {intro}")
-    for sec in structure:
-        if sec.get("h2"):
-            parts.append(f"Section: {sec['h2']}")
-        for sub in sec.get("subsections", []):
-            if sub.get("body"):
-                parts.append(sub["body"])
-    return "\n".join(parts).strip()
-
-def build_wordpress_html_fragment(h1, intro, structure):
-    def esc(value):
-        return html.escape(str(value), quote=True)
-    parts = []
-    if h1:
-        parts.append(f"<h1>{esc(h1)}</h1>")
-    if intro:
-        parts.append(f"<p>{esc(intro)}</p>")
-    for sec in structure:
-        if sec.get("h2"):
-            parts.append(f"<h2>{esc(sec['h2'])}</h2>")
-        body = ""
-        if sec.get("subsections"):
-            body = sec["subsections"][0].get("body", "").strip()
-        if body:
-            for paragraph in [p.strip() for p in body.split("\n\n") if p.strip()]:
-                parts.append(f"<p>{esc(paragraph)}</p>")
-    return "\n".join(parts).strip()
-
-def clean_imported_article_text(text):
-    text = (text or "").replace("\r\n", "\n").replace("\r", "\n")
-    bad_exact_patterns = [
-        r"^\s*advertisement\s*$", r"^\s*sponsored\s*$", r"^\s*promoted\s*$",
-        r"^\s*related articles?\s*$", r"^\s*read more\s*$", r"^\s*newsletter\s*$",
-        r"^\s*sign up\s*$", r"^\s*adkeeper\s*$", r"^\s*partner content\s*$",
-        r"^\s*recommended\s*$", r"^\s*more for you\s*$", r"^\s*continue reading\s*$",
-        r"^\s*print\s*$", r"^\s*close\s*$", r"^\s*search for\s*$",
-        r"^\s*home\s*$", r"^\s*about\s*$", r"^\s*corrections\s*$",
-        r"^\s*politics\s*$", r"^\s*top story\s*$",
-    ]
-    bad_contains_patterns = [
-        r"adkeeper", r"newsletter", r"sign up", r"read more", r"related articles?",
-        r"sponsored", r"promoted", r"advertisement",
-        r"this article may contain commentary", r"reflects the author'?s opinion",
-        r"follow us", r"share this", r"privacy policy", r"terms of use",
-        r"sitemap", r"all rights reserved", r"facebook", r"messenger", r"telegram",
-        r"email", r"print",
-    ]
-    stop_patterns = [
-        r"related articles?", r"read more", r"more for you", r"recommended",
-        r"you may also like", r"latest news", r"trending", r"newsletter",
-        r"sign up", r"follow us", r"share this", r"privacy policy",
-        r"terms of use", r"sitemap", r"copyright", r"all rights reserved",
-    ]
-    lines = text.split("\n")
-    cleaned_lines = []
-    last_blank = True
-    seen_recent = []
-    for raw_line in lines:
-        line = re.sub(r"\s+", " ", raw_line).strip()
-        low = line.lower()
-        if not line:
-            if not last_blank:
-                cleaned_lines.append("")
-            last_blank = True
-            continue
-        if any(re.search(p, low, re.IGNORECASE) for p in bad_exact_patterns):
-            continue
-        if any(re.search(p, low, re.IGNORECASE) for p in bad_contains_patterns):
-            if len(line) <= 140:
-                continue
-        if low == "cbf2 22marcbf2 22mar":
-            continue
-        if re.fullmatch(r"[A-Za-z]{2,10}\d{1,4}[A-Za-z0-9 ]*", line):
-            continue
-        if re.fullmatch(r"[A-Za-z0-9 ]{1,40}", line) and any(ch.isdigit() for ch in line) and len(line.split()) <= 6:
-            continue
-        short_ui_words = {"facebook","twitter","x","telegram","email","print","copy link","menu","search","close","next","previous"}
-        if low in short_ui_words:
-            continue
-        norm = re.sub(r"[^a-z0-9]+", " ", low).strip()
-        if norm and norm in seen_recent[-80:]:
-            continue
-        if norm:
-            seen_recent.append(norm)
-        cleaned_lines.append(line)
-        last_blank = False
-    cleaned_text = "\n".join(cleaned_lines)
-    cleaned_text = re.sub(r"\n{3,}", "\n\n", cleaned_text).strip()
-    paragraphs = [p.strip() for p in re.split(r"\n\s*\n", cleaned_text) if p.strip()]
-    if not paragraphs:
-        return cleaned_text
-    filtered_paragraphs = []
-    started_main = False
-    for i, para in enumerate(paragraphs):
-        low = para.lower()
-        word_count = len(para.split())
-        if word_count <= 8 and any(re.search(p, low, re.IGNORECASE) for p in stop_patterns):
-            continue
-        if started_main:
-            if any(re.search(p, low, re.IGNORECASE) for p in stop_patterns):
-                break
-            if word_count <= 12 and (
-                any(re.search(p, low, re.IGNORECASE) for p in bad_contains_patterns) or
-                any(re.search(p, low, re.IGNORECASE) for p in stop_patterns)
-            ):
-                break
-        if not started_main:
-            if word_count >= 12:
-                started_main = True
-                filtered_paragraphs.append(para)
-            else:
-                if i == 0 and 3 <= word_count <= 14:
-                    filtered_paragraphs.append(para)
-                continue
-        else:
-            filtered_paragraphs.append(para)
-    final_paragraphs = []
-    for para in filtered_paragraphs:
-        low = para.lower()
-        wc = len(para.split())
-        if wc <= 12 and any(re.search(p, low, re.IGNORECASE) for p in stop_patterns):
-            continue
-        if wc <= 10 and any(re.search(p, low, re.IGNORECASE) for p in bad_contains_patterns):
-            continue
-        final_paragraphs.append(para)
-    result = "\n\n".join(final_paragraphs).strip()
-    result = re.sub(r"\n{3,}", "\n\n", result).strip()
-    return result
-
-def sanitize_text(text, max_len=None):
-    text = str(text).strip()
-    banned = ["featured image", "Featured image", "featured-image", "Featured Image"]
-    for item in banned:
-        text = text.replace(item, "")
-    text = " ".join(text.split()).strip(" -,:")
-    if max_len:
-        text = text[:max_len].strip()
-    return text
-
-def make_prompt(keyword):
-    return f"""You are an image SEO assistant.
-
-Analyze the image and return ONLY valid JSON with these exact keys:
-alt_text
-img_title
-caption
-
-Rules:
-- alt_text: max 60 characters, clear, natural
-- img_title: short and clear
-- caption: 1 natural sentence, engaging
-- never use the phrase "featured image"
-- do not mention "featured image"
-- include the keyword naturally if it fits
-- no markdown
-- no explanation
-- no extra keys
-
-Focus keyword / scene notes: {keyword}"""
-
-
-# ─── Flask Routes ────────────────────────────────────────────────────────────
-
+# ── routes ────────────────────────────────────────────────────────────────────
 @app.route("/")
 def index():
     return render_template("index.html")
 
 
-@app.route("/api/test-key", methods=["POST"])
-def test_key():
-    data = request.json or {}
-    api_key = (data.get("api_key") or "").strip()
-    if not api_key:
-        return jsonify({"ok": False, "error": "API key is empty"}), 400
+@app.route("/api/image-seo", methods=["POST"])
+def image_seo():
+    """Receive image + keyword, call Together AI vision, return SEO fields."""
+    ip = request.remote_addr
+    if not _rate_ok(ip):
+        return jsonify({"error": "Rate limit exceeded — try again in a minute."}), 429
+
+    if not TOGETHER_API_KEY:
+        return jsonify({"error": "Server API key not configured."}), 500
+
+    file    = request.files.get("image")
+    keyword = request.form.get("keyword", "image SEO").strip() or "image SEO"
+
+    if not file:
+        return jsonify({"error": "No image uploaded."}), 400
+
+    # Resize to max 1024px on longest side to keep payload small
     try:
-        verify_together_api_key(api_key, timeout=20)
-        return jsonify({"ok": True})
+        img = Image.open(file.stream).convert("RGB")
+        w, h = img.size
+        max_dim = 1024
+        if max(w, h) > max_dim:
+            scale = max_dim / max(w, h)
+            img = img.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
+        buf = io.BytesIO()
+        img.save(buf, "JPEG", quality=85)
+        data_url = "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode()
     except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 400
+        return jsonify({"error": f"Image processing failed: {e}"}), 400
 
+    prompt = (
+        "You are an image SEO assistant.\n"
+        "Analyze the image and return ONLY valid JSON with exactly these keys:\n"
+        "alt_text, img_title, caption\n\n"
+        "Rules:\n"
+        "- alt_text: max 60 chars, clear, natural description\n"
+        "- img_title: short, clear, keyword-rich title\n"
+        "- caption: 1 engaging natural sentence\n"
+        "- never use the phrase 'featured image'\n"
+        "- include the keyword naturally if it fits\n"
+        "- no markdown, no explanation, no extra keys\n\n"
+        f"Focus keyword / scene notes: {keyword}"
+    )
 
-@app.route("/api/process-article", methods=["POST"])
-def process_article():
-    data = request.json or {}
-    raw = (data.get("text") or "").strip()
-    api_key = (data.get("api_key") or "").strip()
-
-    if not raw or raw in ("Paste your article here...", "Paste your article here."):
-        return jsonify({"ok": False, "error": "Please paste an article first"}), 400
-
-    # If API key available — use AI to generate full layout
-    if api_key:
+    last_err = None
+    for model in [VISION_MODEL, VISION_FALLBACK_MODEL]:
         try:
-            system_prompt = """Role: You are a Professional Webmaster SEO Specialist.
-Task: Format the provided article to look exactly like a high-quality news layout (Clear H1, H2, and Body separation).
-
-STRICT RULES (ABSOLUTE):
-- NO ADDED CONTENT: Do not add any information, opinions, or details not in the original text.
-- NO REMOVAL: Do not cut out any facts, names, or quotes.
-- VISUAL STRUCTURE: Use bold headers for H1 and H2 to separate them clearly from the body text.
-- 100% ORIGINAL MEANING: Keep the exact intent and tone of the source.
-- H2 headings MUST be question-style (e.g. "What Triggered...?", "What Comes Next for...?", "How Does...?")
-
-Return ONLY valid JSON with these exact keys:
-{
-  "h1": "Main title",
-  "intro": "First 50-100 words body introduction",
-  "structure": [
-    {
-      "h2": "Question-style H2 heading?",
-      "body": "Section body. MUST use \n\n between every 1-2 sentences. Short paragraphs only. Bullets use - prefix."
-    }
-  ],
-  "conclusion": "Original summary + CTA question",
-  "internal_link_topic": "Topic for internal link placeholder",
-  "focus_keyphrase": "2-5 word keyphrase",
-  "seo_title": "Max 60 chars SEO title",
-  "meta_description": "120-150 chars meta description",
-  "image_alt_text": "Image alt text",
-  "image_title": "Image title",
-  "slug": "url-slug",
-  "short_summary": "20-second video length summary"
-}
-
-No markdown, no explanation, no extra keys. Return JSON only."""
-
-            response = together_chat_completion(
-                api_key=api_key,
-                model=ARTICLE_MODEL,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": f"Format this article:\n\n{raw[:6000]}"},
-                ],
-                temperature=0.3,
-                timeout=60,
+            extra = {"reasoning": {"enabled": False}} if "Kimi" in model else {}
+            resp  = _together_chat(
+                model,
+                messages=[{"role": "user", "content": [
+                    {"type": "text", "text": prompt},
+                    {"type": "image_url", "image_url": {"url": data_url}},
+                ]}],
+                response_format={"type": "json_object"},
+                **extra,
             )
-            content = extract_message_content(response)
-            try:
-                ai_data = json.loads(content)
-            except Exception:
-                cleaned = content.replace("```json", "").replace("```", "").strip()
-                match = re.search(r"\{.*\}", cleaned, re.DOTALL)
-                ai_data = json.loads(match.group(0) if match else cleaned)
-
-            h1 = sanitize_text(ai_data.get("h1", ""), 200)
-            intro = sanitize_text(ai_data.get("intro", ""), 500)
-            conclusion = sanitize_text(ai_data.get("conclusion", ""), 500)
-            internal_link_topic = sanitize_text(ai_data.get("internal_link_topic", ""), 100)
-
-            structure = []
-            for sec in (ai_data.get("structure") or [])[:4]:
-                h2 = sanitize_text(sec.get("h2", ""), 150)
-                body = (sec.get("body") or "").strip()
-                if h2 and body:
-                    structure.append({"h2": h2, "subsections": [{"h3": h2, "body": body}]})
-
-            focus_keyphrase = sanitize_text(ai_data.get("focus_keyphrase", ""), 80)
-            seo_title = sanitize_text(ai_data.get("seo_title", ""), 60)
-            meta_description = sanitize_text(ai_data.get("meta_description", ""), 160)
-            image_alt_text = sanitize_text(ai_data.get("image_alt_text", ""), 100)
-            image_title = sanitize_text(ai_data.get("image_title", ""), 100)
-            slug = sanitize_text(ai_data.get("slug", make_slug(h1)), 80)
-            short_summary = sanitize_text(ai_data.get("short_summary", ""), 300)
-
-            # Build WordPress HTML
-            wp_parts = []
-            if h1:
-                wp_parts.append(f"<h1>{esc(h1)}</h1>")
-            if intro:
-                wp_parts.append(f"<p>{esc(intro)}</p>")
-            for sec in structure:
-                if sec.get("h2"):
-                    wp_parts.append(f"<h2>{esc(sec['h2'])}</h2>")
-                body_text = sec["subsections"][0].get("body", "") if sec.get("subsections") else ""
-                if body_text:
-                    for para in [p.strip() for p in body_text.split("\n\n") if p.strip()]:
-                        if para.startswith("- "):
-                            items = [li.strip("- ").strip() for li in para.split("\n") if li.strip().startswith("- ")]
-                            wp_parts.append("<ul>" + "".join(f"<li>{esc(i)}</li>" for i in items) + "</ul>")
-                        else:
-                            wp_parts.append(f"<p>{esc(para)}</p>")
-            if internal_link_topic:
-                wp_parts.append(f'<p><em>You can also read more about <a href="#">{esc(internal_link_topic)}</a>...</em></p>')
-            if conclusion:
-                wp_parts.append(f"<h2>{esc('Conclusion')}</h2>")
-                wp_parts.append(f"<p>{esc(conclusion)}</p>")
-            wp_html = "\n".join(wp_parts)
-
+            data = _parse_json(_extract(resp))
+            def _s(t, mx):
+                t = str(t).strip().replace("featured image","").replace("Featured Image","")
+                return " ".join(t.split())[:mx].strip(" -,:")
             return jsonify({
-                "ok": True,
-                "ai_layout": True,
-                "h1": h1,
-                "intro": intro,
-                "conclusion": conclusion,
-                "internal_link_topic": internal_link_topic,
-                "structure": structure,
-                "focus_keyphrase": focus_keyphrase,
-                "seo_title": seo_title,
-                "meta_description": meta_description,
-                "image_alt_text": image_alt_text,
-                "image_title": image_title,
-                "slug": slug,
-                "short_summary": short_summary,
-                "wp_html": wp_html,
-                "ai_seo": True,
+                "alt_text":  _s(data.get("alt_text",""),  60),
+                "img_title": _s(data.get("img_title",""), 80),
+                "caption":   _s(data.get("caption",""),  180),
+                "model":     model,
             })
         except Exception as e:
-            pass  # Fall through to rule-based below
+            last_err = e
 
-    # Fallback: rule-based (no API key or AI failed)
-    lines = strip_internal_seo_lines(clean_lines(raw))
-    if not lines:
-        return jsonify({"ok": False, "error": "No valid content found"}), 400
-
-    h1 = guess_title(lines)
-    intro = build_intro(lines)
-    sections = split_body_into_sections(lines, num_sections=None)
-    structure = build_nested_article_structure(sections)
-    focus_keyphrase = make_focus_keyphrase(h1)
-    seo_titles = make_seo_title_options(h1)
-    meta_options = make_meta_options(intro, h1)
-    seo_title = seo_titles[0] if seo_titles else h1
-    meta_description = meta_options[0] if meta_options else trim_at_word_boundary(intro if intro else h1, 160)
-    slug = make_slug(h1)
-    short_summary = make_short_summary(intro, structure)
-    wp_html = build_wordpress_html_fragment(h1, intro, structure)
-
-    return jsonify({
-        "ok": True,
-        "ai_layout": False,
-        "h1": h1,
-        "intro": intro,
-        "structure": structure,
-        "focus_keyphrase": focus_keyphrase,
-        "seo_title": seo_title,
-        "meta_description": meta_description,
-        "slug": slug,
-        "short_summary": short_summary,
-        "wp_html": wp_html,
-    })
+    return jsonify({"error": str(last_err) or "Together AI failed"}), 502
 
 
-@app.route("/api/generate-ai-seo", methods=["POST"])
-def generate_ai_seo():
-    data = request.json or {}
-    api_key = (data.get("api_key") or "").strip()
-    h1 = (data.get("h1") or "").strip()
-    intro = (data.get("intro") or "").strip()
-    structure = data.get("structure") or []
+@app.route("/api/seo-format", methods=["POST"])
+def seo_format():
+    """
+    Pure Python SEO formatting — no AI needed.
+    Accepts JSON: { "text": "..." }
+    Returns all SEO fields including hashtags.
+    """
+    body = request.get_json(silent=True) or {}
+    raw  = (body.get("text") or "").strip()
+    if not raw:
+        return jsonify({"error": "No text provided."}), 400
 
-    if not api_key:
-        return jsonify({"ok": False, "error": "No API key"}), 400
-
+    from seo_logic import process_text
     try:
-        prompt_text = build_seo_source_text(h1, intro, structure)
-        system_prompt = (
-            "You are an SEO editor for WordPress news articles. "
-            "Return only valid JSON with keys focus_keyphrase, seo_title, meta_description. "
-            "Choose a focus keyphrase of 2 to 5 words, an SEO title under 60 characters, "
-            "and a meta description under 160 characters. Make them engaging, factual, keyword-focused, "
-            "and suitable for Rank Math or Yoast style WordPress SEO."
-        )
-        user_prompt = (
-            "Article content:\n" + prompt_text + "\n\n"
-            "Return JSON only like:\n"
-            '{"focus_keyphrase":"...","seo_title":"...","meta_description":"..."}'
-        )
-        response = together_chat_completion(
-            api_key=api_key,
-            model=ARTICLE_MODEL,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            temperature=0.3,
-            timeout=45,
-        )
-        content = extract_message_content(response)
-        match = re.search(r"\{.*\}", content, re.DOTALL)
-        if not match:
-            return jsonify({"ok": False, "error": "No JSON in response"}), 400
-        ai_data = json.loads(match.group(0))
-        return jsonify({
-            "ok": True,
-            "focus_keyphrase": trim_at_word_boundary(normalize_space(ai_data.get("focus_keyphrase", "")), 80),
-            "seo_title": trim_at_word_boundary(normalize_space(ai_data.get("seo_title", "")), 60),
-            "meta_description": trim_at_word_boundary(normalize_space(ai_data.get("meta_description", "")), 160),
-        })
+        result = process_text(raw)
+        return jsonify(result)
     except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 400
-
-
-@app.route("/api/fetch-url", methods=["POST"])
-def fetch_url():
-    data = request.json or {}
-    url = (data.get("url") or "").strip()
-    if not url or not re.match(r"^https?://", url, re.IGNORECASE):
-        return jsonify({"ok": False, "error": "Invalid URL"}), 400
-    try:
-        import trafilatura
-        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"}
-        response = requests.get(url, headers=headers, timeout=25)
-        response.raise_for_status()
-        extracted = trafilatura.extract(
-            response.text,
-            include_comments=False,
-            include_tables=False,
-            include_images=False,
-            include_links=False,
-            no_fallback=False,
-            favor_precision=True,
-        )
-        if not extracted or not extracted.strip():
-            return jsonify({"ok": False, "error": "Could not extract main article text from this URL"}), 400
-        cleaned = clean_imported_article_text(extracted)
-        if not cleaned.strip():
-            return jsonify({"ok": False, "error": "Article became empty after cleaning"}), 400
-        return jsonify({"ok": True, "text": cleaned})
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 400
-
-
-@app.route("/api/generate-image-seo", methods=["POST"])
-def generate_image_seo():
-    api_key = (request.form.get("api_key") or "").strip()
-    keyword = (request.form.get("keyword") or "image SEO").strip()
-    image_file = request.files.get("image")
-
-    if not image_file:
-        return jsonify({"ok": False, "error": "No image uploaded"}), 400
-
-    raw = image_file.read()
-    ext = os.path.splitext(image_file.filename)[1].lower().replace(".", "")
-    if ext == "jpg":
-        ext = "jpeg"
-    if ext not in ["jpeg", "png", "webp", "gif"]:
-        ext = "jpeg"
-
-    # Resize image if >1MB to avoid timeout on Render free tier
-    try:
-        from PIL import Image as PILImage
-        import io as _io
-        if len(raw) > 1_000_000:
-            img_pil = PILImage.open(_io.BytesIO(raw)).convert("RGB")
-            img_pil.thumbnail((1024, 1024), PILImage.LANCZOS)
-            buf = _io.BytesIO()
-            img_pil.save(buf, format="JPEG", quality=85)
-            raw = buf.getvalue()
-            ext = "jpeg"
-    except Exception:
-        pass
-
-    b64 = base64.b64encode(raw).decode("utf-8")
-    image_data_url = f"data:image/{ext};base64,{b64}"
-
-    if not api_key:
-        base = sanitize_text(keyword or "image seo", 60)
-        base_title = base.title() if base else "Image"
-        return jsonify({
-            "ok": True,
-            "alt_text": sanitize_text(base, 60) or "Optimized image",
-            "img_title": sanitize_text(base_title, 80) or "Optimized Image",
-            "caption": sanitize_text(f"{base_title} image for WordPress SEO.", 180),
-            "ai": False,
-        })
-
-    try:
-        prompt = make_prompt(keyword)
-        last_error = None
-        for model_name in [VISION_MODEL, VISION_FALLBACK_MODEL]:
-            try:
-                response = together_chat_completion(
-                    api_key=api_key,
-                    model=model_name,
-                    messages=[{
-                        "role": "user",
-                        "content": [
-                            {"type": "text", "text": prompt},
-                            {"type": "image_url", "image_url": {"url": image_data_url}},
-                        ],
-                    }],
-                    temperature=0.6,
-                    timeout=90,
-                )
-                raw_text = extract_message_content(response)
-                try:
-                    img_data = json.loads(raw_text)
-                except Exception:
-                    cleaned = raw_text.replace("```json", "").replace("```", "").strip()
-                    match = re.search(r"\{.*\}", cleaned, re.DOTALL)
-                    img_data = json.loads(match.group(0) if match else cleaned)
-                alt_text = sanitize_text(img_data.get("alt_text", ""), 60)
-                img_title = sanitize_text(img_data.get("img_title", ""), 80)
-                caption = sanitize_text(img_data.get("caption", ""), 180)
-                if not alt_text or not img_title or not caption:
-                    raise ValueError("Incomplete SEO fields from model")
-                return jsonify({
-                    "ok": True,
-                    "alt_text": alt_text,
-                    "img_title": img_title,
-                    "caption": caption,
-                    "ai": True,
-                    "model": model_name,
-                })
-            except Exception as model_error:
-                last_error = model_error
-                continue
-        raise RuntimeError(str(last_error) if last_error else "All models failed")
-    except Exception as e:
-        base = sanitize_text(keyword or "image seo", 60)
-        base_title = base.title() if base else "Image"
-        return jsonify({
-            "ok": True,
-            "alt_text": sanitize_text(base, 60) or "Optimized image",
-            "img_title": sanitize_text(base_title, 80) or "Optimized Image",
-            "caption": sanitize_text(f"{base_title} image for WordPress SEO.", 180),
-            "ai": False,
-            "ai_error": str(e),  # ← បន្ថែម error detail ដើម្បី debug
-        })
+        return jsonify({"error": str(e)}), 500
 
 
 if __name__ == "__main__":
-    import os
-    port = int(os.environ.get("PORT", 5000))
-    app.run(debug=False, host="0.0.0.0", port=port)
+    app.run(debug=True, port=5000)
