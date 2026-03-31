@@ -15,6 +15,7 @@ const state = {
   safeZone: true,
   lockRatio: true,
   apiKey: "",
+  imageDraw: null,
 };
 
 const els = {
@@ -77,14 +78,17 @@ const els = {
   cAll: $("#cAll"),
 };
 
-const ctx = els.cropCanvas.getContext("2d");
+const ctx = els.cropCanvas ? els.cropCanvas.getContext("2d") : null;
 
-
+/* ─────────────────────────────────────────────
+   Helpers
+───────────────────────────────────────────── */
 function setStatus(text) {
-  els.statusBar.textContent = text;
+  if (els.statusBar) els.statusBar.textContent = text;
 }
 
 function setBadge(mode, text) {
+  if (!els.apiBadge) return;
   els.apiBadge.classList.remove("ready", "busy", "error");
   if (mode === "busy") els.apiBadge.classList.add("busy");
   else if (mode === "error") els.apiBadge.classList.add("error");
@@ -93,18 +97,18 @@ function setBadge(mode, text) {
 }
 
 function refreshApiBadge() {
-  if (state.apiKey) {
-    setBadge("ready", "● User API Saved");
-  } else {
-    setBadge("ready", "○ Ready");
-  }
+  if (state.apiKey) setBadge("ready", "● User API Saved");
+  else setBadge("ready", "○ Ready");
 }
 
 function toast(msg) {
+  if (!els.toast) return;
   els.toast.textContent = msg;
   els.toast.classList.add("show");
-  clearTimeout(toast._t);
-  toast._t = setTimeout(() => els.toast.classList.remove("show"), 1800);
+  clearTimeout(toast._timer);
+  toast._timer = setTimeout(() => {
+    els.toast.classList.remove("show");
+  }, 1800);
 }
 
 async function copyText(text, label = "Copied") {
@@ -112,6 +116,7 @@ async function copyText(text, label = "Copied") {
     setStatus("Nothing to copy");
     return;
   }
+
   try {
     await navigator.clipboard.writeText(String(text));
     toast(label);
@@ -141,22 +146,51 @@ function nl2br(s = "") {
 }
 
 function switchTab(tab) {
-  els.tabBtns.forEach(btn => btn.classList.toggle("active", btn.dataset.tab === tab));
-  els.panels.forEach(panel => panel.classList.toggle("active", panel.id === `tab-${tab}`));
+  els.tabBtns.forEach((btn) => btn.classList.toggle("active", btn.dataset.tab === tab));
+  els.panels.forEach((panel) => panel.classList.toggle("active", panel.id === `tab-${tab}`));
 }
 
-els.tabBtns.forEach(btn => {
+async function fetchJsonSafe(url, options = {}) {
+  const response = await fetch(url, options);
+  const rawText = await response.text();
+
+  let data = {};
+  try {
+    data = rawText ? JSON.parse(rawText) : {};
+  } catch {
+    throw new Error(
+      `Server returned non-JSON response (${response.status}). Response starts with: ${rawText.slice(0, 120)}`
+    );
+  }
+
+  if (!response.ok) {
+    throw new Error(data.error || `Request failed with status ${response.status}`);
+  }
+
+  return data;
+}
+
+/* ─────────────────────────────────────────────
+   Tabs
+───────────────────────────────────────────── */
+els.tabBtns.forEach((btn) => {
   btn.addEventListener("click", () => switchTab(btn.dataset.tab));
 });
 
-
+/* ─────────────────────────────────────────────
+   API Modal
+───────────────────────────────────────────── */
 function openApiModal() {
+  if (!els.apiModal) return;
   els.apiModal.classList.remove("hidden");
   els.apiKeyInput.value = state.apiKey || "";
-  els.apiModalStatus.textContent = state.apiKey ? "Saved key loaded from browser" : "No key saved";
+  els.apiModalStatus.textContent = state.apiKey
+    ? "Saved key loaded from browser"
+    : "No key saved";
 }
 
 function closeApiModal() {
+  if (!els.apiModal) return;
   els.apiModal.classList.add("hidden");
 }
 
@@ -166,7 +200,7 @@ function loadApiKey() {
 }
 
 function saveApiKey() {
-  const key = els.apiKeyInput.value.trim();
+  const key = (els.apiKeyInput.value || "").trim();
   if (!key) {
     els.apiModalStatus.textContent = "API key is empty";
     return;
@@ -182,7 +216,7 @@ function saveApiKey() {
 function clearApiKey() {
   localStorage.removeItem(STORAGE_KEY);
   state.apiKey = "";
-  els.apiKeyInput.value = "";
+  if (els.apiKeyInput) els.apiKeyInput.value = "";
   refreshApiBadge();
   els.apiModalStatus.textContent = "Saved API key cleared";
   toast("API key cleared");
@@ -190,7 +224,7 @@ function clearApiKey() {
 }
 
 async function testApiKey() {
-  const key = els.apiKeyInput.value.trim();
+  const key = (els.apiKeyInput.value || "").trim();
   if (!key) {
     els.apiModalStatus.textContent = "Paste API key first";
     return;
@@ -198,14 +232,13 @@ async function testApiKey() {
 
   els.apiModalStatus.textContent = "Testing API key...";
   try {
-    const res = await fetch("/api/ping-key", {
+    const data = await fetchJsonSafe("/api/ping-key", {
       method: "POST",
-      headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({ api_key: key })
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ api_key: key }),
     });
 
-    const data = await res.json();
-    if (!res.ok || !data.ok) {
+    if (!data.ok) {
       throw new Error(data.error || "Invalid API key");
     }
 
@@ -214,22 +247,32 @@ async function testApiKey() {
   } catch (err) {
     els.apiModalStatus.textContent = err.message;
     toast("API key failed");
+    console.error("testApiKey error:", err);
   }
 }
 
-els.openApiModal.addEventListener("click", openApiModal);
-els.closeApiModal.addEventListener("click", closeApiModal);
-els.apiModal.addEventListener("click", (e) => {
-  if (e.target === els.apiModal) closeApiModal();
-});
-els.showApiKey.addEventListener("change", () => {
-  els.apiKeyInput.type = els.showApiKey.checked ? "text" : "password";
-});
-els.btnSaveApi.addEventListener("click", saveApiKey);
-els.btnClearApi.addEventListener("click", clearApiKey);
-els.btnTestApi.addEventListener("click", testApiKey);
+if (els.openApiModal) els.openApiModal.addEventListener("click", openApiModal);
+if (els.closeApiModal) els.closeApiModal.addEventListener("click", closeApiModal);
 
+if (els.apiModal) {
+  els.apiModal.addEventListener("click", (e) => {
+    if (e.target === els.apiModal) closeApiModal();
+  });
+}
 
+if (els.showApiKey) {
+  els.showApiKey.addEventListener("change", () => {
+    els.apiKeyInput.type = els.showApiKey.checked ? "text" : "password";
+  });
+}
+
+if (els.btnSaveApi) els.btnSaveApi.addEventListener("click", saveApiKey);
+if (els.btnClearApi) els.btnClearApi.addEventListener("click", clearApiKey);
+if (els.btnTestApi) els.btnTestApi.addEventListener("click", testApiKey);
+
+/* ─────────────────────────────────────────────
+   SEO Rendering
+───────────────────────────────────────────── */
 function renderSEO(data) {
   state.seoData = data;
 
@@ -239,13 +282,13 @@ function renderSEO(data) {
   if (data.h1) html.push(`<h1>${escapeHtml(data.h1)}</h1>`);
   if (data.intro) html.push(`<p class="intro">${escapeHtml(data.intro)}</p>`);
 
-  (data.body_sections || []).forEach(section => {
+  (data.body_sections || []).forEach((section) => {
     if (section.h2) html.push(`<h2>${escapeHtml(section.h2)}</h2>`);
-    (section.subsections || []).forEach(sub => {
+    (section.subsections || []).forEach((sub) => {
       if (sub.h3) html.push(`<h3>${escapeHtml(sub.h3)}</h3>`);
       if (sub.h4) html.push(`<h3>${escapeHtml(sub.h4)}</h3>`);
       if (sub.body) {
-        sub.body.split(/\n{2,}/).forEach(p => {
+        sub.body.split(/\n{2,}/).forEach((p) => {
           if (p.trim()) html.push(`<p>${nl2br(p.trim())}</p>`);
         });
       }
@@ -261,7 +304,7 @@ function renderSEO(data) {
     `SEO Title: ${data.seo_title || ""}`,
     `Meta Description: ${data.meta_description || ""}`,
     `Slug (URL): ${data.slug || ""}`,
-    `Short Summary: ${data.short_summary || ""}`
+    `Short Summary: ${data.short_summary || ""}`,
   ].join("\n");
 
   els.optCaption.textContent = data.short_caption || "";
@@ -270,7 +313,8 @@ function renderSEO(data) {
 
 function clearSEOOutput() {
   state.seoData = null;
-  els.outputArticle.innerHTML = `<div class="placeholder-msg">Your formatted output will appear here after generation.</div>`;
+  els.outputArticle.innerHTML =
+    `<div class="placeholder-msg">Your formatted output will appear here after generation.</div>`;
   els.optTitles.textContent = "";
   els.optMeta.textContent = "";
   els.optCaption.textContent = "";
@@ -278,7 +322,7 @@ function clearSEOOutput() {
 }
 
 async function generateSEO() {
-  const text = els.inputArticle.value.trim();
+  const text = (els.inputArticle.value || "").trim();
   if (!text) {
     setStatus("Please paste article text first");
     toast("Please paste article text first");
@@ -289,15 +333,11 @@ async function generateSEO() {
   setBadge("busy", "◌ Working");
 
   try {
-    const res = await fetch("/api/seo-format", {
+    const data = await fetchJsonSafe("/api/seo-format", {
       method: "POST",
-      headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({ text })
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
     });
-
-    const data = await res.json();
-
-    if (!res.ok) throw new Error(data.error || "SEO generation failed");
 
     renderSEO(data);
     refreshApiBadge();
@@ -307,30 +347,37 @@ async function generateSEO() {
     setStatus(err.message);
     setBadge("error", "● Error");
     toast("Failed");
+    console.error("generateSEO error:", err);
   }
 }
 
-els.btnGenerate.addEventListener("click", generateSEO);
+if (els.btnGenerate) els.btnGenerate.addEventListener("click", generateSEO);
 
-els.btnClearIn.addEventListener("click", () => {
-  els.inputArticle.value = "";
-  setStatus("Input cleared");
-});
+if (els.btnClearIn) {
+  els.btnClearIn.addEventListener("click", () => {
+    els.inputArticle.value = "";
+    setStatus("Input cleared");
+  });
+}
 
-els.btnClearOut.addEventListener("click", () => {
-  clearSEOOutput();
-  setStatus("Output cleared");
-});
+if (els.btnClearOut) {
+  els.btnClearOut.addEventListener("click", () => {
+    clearSEOOutput();
+    setStatus("Output cleared");
+  });
+}
 
-els.btnCopyHTML.addEventListener("click", async () => {
-  if (!state.seoData) {
-    setStatus("Generate SEO first");
-    return;
-  }
-  await copyText(state.seoData.html_output || "", "Copied WP HTML");
-});
+if (els.btnCopyHTML) {
+  els.btnCopyHTML.addEventListener("click", async () => {
+    if (!state.seoData) {
+      setStatus("Generate SEO first");
+      return;
+    }
+    await copyText(state.seoData.html_output || "", "Copied WP HTML");
+  });
+}
 
-$$(".pill").forEach(btn => {
+$$(".pill").forEach((btn) => {
   btn.addEventListener("click", async () => {
     if (!state.seoData) {
       setStatus("Generate SEO first");
@@ -342,15 +389,20 @@ $$(".pill").forEach(btn => {
   });
 });
 
-
-// IMAGE / CROP
+/* ─────────────────────────────────────────────
+   Image / Crop
+───────────────────────────────────────────── */
 function fitCanvasToWrap() {
+  if (!els.canvasWrap || !els.cropCanvas || !ctx) return;
+
   const rect = els.canvasWrap.getBoundingClientRect();
   const dpr = window.devicePixelRatio || 1;
+
   els.cropCanvas.width = Math.max(1, Math.floor(rect.width * dpr));
   els.cropCanvas.height = Math.max(1, Math.floor(rect.height * dpr));
   els.cropCanvas.style.width = `${rect.width}px`;
   els.cropCanvas.style.height = `${rect.height}px`;
+
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   drawCanvas();
 }
@@ -359,6 +411,7 @@ function defaultCropRect() {
   const rect = els.canvasWrap.getBoundingClientRect();
   const w = rect.width;
   const h = rect.height;
+
   const rw = Math.min(w * 0.55, 620);
   const rh = state.aspectRatio ? rw / state.aspectRatio : h * 0.55;
 
@@ -374,11 +427,13 @@ function defaultCropRect() {
     x: (w - finalW) / 2,
     y: (h - finalH) / 2,
     w: finalW,
-    h: finalH
+    h: finalH,
   };
 }
 
 function drawCanvas() {
+  if (!ctx || !els.canvasWrap) return;
+
   const rect = els.canvasWrap.getBoundingClientRect();
   ctx.clearRect(0, 0, rect.width, rect.height);
 
@@ -394,7 +449,6 @@ function drawCanvas() {
   const y = (rect.height - drawH) / 2;
 
   state.imageDraw = { x, y, w: drawW, h: drawH, baseScale };
-
   ctx.drawImage(img, x, y, drawW, drawH);
 
   if (!state.crop) return;
@@ -417,7 +471,6 @@ function drawCanvas() {
 
   ctx.strokeStyle = "rgba(120,170,255,.45)";
   ctx.lineWidth = 1;
-
   ctx.beginPath();
   ctx.moveTo(state.crop.x + thirdX, state.crop.y);
   ctx.lineTo(state.crop.x + thirdX, state.crop.y + state.crop.h);
@@ -463,7 +516,7 @@ function pointerPos(evt) {
   const rect = els.canvasWrap.getBoundingClientRect();
   return {
     x: evt.clientX - rect.left,
-    y: evt.clientY - rect.top
+    y: evt.clientY - rect.top,
   };
 }
 
@@ -477,9 +530,7 @@ function hitCorner(pos) {
     br: { x: state.crop.x + state.crop.w, y: state.crop.y + state.crop.h },
   };
   for (const [name, p] of Object.entries(pts)) {
-    if (Math.abs(pos.x - p.x) <= hs && Math.abs(pos.y - p.y) <= hs) {
-      return name;
-    }
+    if (Math.abs(pos.x - p.x) <= hs && Math.abs(pos.y - p.y) <= hs) return name;
   }
   return null;
 }
@@ -546,55 +597,51 @@ function resizeCrop(corner, pos) {
 
   if (state.lockRatio && state.aspectRatio) {
     const ratio = state.aspectRatio;
-
-    if (w / h > ratio) {
-      w = h * ratio;
-    } else {
-      h = w / ratio;
-    }
+    if (w / h > ratio) w = h * ratio;
+    else h = w / ratio;
 
     if (corner === "tl") {
       x = state.crop.x + state.crop.w - w;
       y = state.crop.y + state.crop.h - h;
     }
-    if (corner === "tr") {
-      y = state.crop.y + state.crop.h - h;
-    }
-    if (corner === "bl") {
-      x = state.crop.x + state.crop.w - w;
-    }
+    if (corner === "tr") y = state.crop.y + state.crop.h - h;
+    if (corner === "bl") x = state.crop.x + state.crop.w - w;
   }
 
   state.crop = { x, y, w, h };
   clampCropToCanvas();
 }
 
-els.canvasWrap.addEventListener("pointerdown", (evt) => {
-  if (!state.originalImage) return;
-  const pos = pointerPos(evt);
-  const corner = hitCorner(pos);
+if (els.canvasWrap) {
+  els.canvasWrap.addEventListener("pointerdown", (evt) => {
+    if (!state.originalImage) return;
 
-  if (corner) {
-    state.drag = { mode: "resize", corner };
-    return;
-  }
+    const pos = pointerPos(evt);
+    const corner = hitCorner(pos);
 
-  if (pointInCrop(pos)) {
-    state.drag = {
-      mode: "move",
-      offsetX: pos.x - state.crop.x,
-      offsetY: pos.y - state.crop.y
-    };
-    return;
-  }
+    if (corner) {
+      state.drag = { mode: "resize", corner };
+      return;
+    }
 
-  state.crop = { x: pos.x, y: pos.y, w: 1, h: 1 };
-  state.drag = { mode: "new", startX: pos.x, startY: pos.y };
-  drawCanvas();
-});
+    if (pointInCrop(pos)) {
+      state.drag = {
+        mode: "move",
+        offsetX: pos.x - state.crop.x,
+        offsetY: pos.y - state.crop.y,
+      };
+      return;
+    }
+
+    state.crop = { x: pos.x, y: pos.y, w: 1, h: 1 };
+    state.drag = { mode: "new", startX: pos.x, startY: pos.y };
+    drawCanvas();
+  });
+}
 
 window.addEventListener("pointermove", (evt) => {
-  if (!state.drag || !state.originalImage) return;
+  if (!state.drag || !state.originalImage || !els.canvasWrap) return;
+
   const pos = pointerPos(evt);
 
   if (state.drag.mode === "move") {
@@ -638,13 +685,16 @@ window.addEventListener("pointerup", () => {
 
 function loadImageFile(file) {
   if (!file) return;
+
   state.imageName = file.name || "image";
   const url = URL.createObjectURL(file);
   const img = new Image();
+
   img.onload = () => {
     state.originalImage = img;
     state.croppedBlob = null;
     state.zoom = 1;
+    state.aspectRatio = null;
     els.zoomSlider.value = "100";
     state.crop = defaultCropRect();
     els.canvasPlaceholder.style.display = "none";
@@ -653,27 +703,34 @@ function loadImageFile(file) {
     URL.revokeObjectURL(url);
     setStatus("Image loaded");
   };
+
   img.src = url;
 }
 
-els.btnUpload.addEventListener("click", () => els.fileInput.click());
-els.fileInput.addEventListener("change", (e) => loadImageFile(e.target.files[0]));
+if (els.btnUpload) els.btnUpload.addEventListener("click", () => els.fileInput.click());
+if (els.fileInput) els.fileInput.addEventListener("change", (e) => loadImageFile(e.target.files[0]));
 
-els.zoomSlider.addEventListener("input", () => {
-  state.zoom = Number(els.zoomSlider.value) / 100;
-  drawCanvas();
-});
+if (els.zoomSlider) {
+  els.zoomSlider.addEventListener("input", () => {
+    state.zoom = Number(els.zoomSlider.value) / 100;
+    drawCanvas();
+  });
+}
 
-els.lockRatio.addEventListener("change", () => {
-  state.lockRatio = els.lockRatio.checked;
-});
+if (els.lockRatio) {
+  els.lockRatio.addEventListener("change", () => {
+    state.lockRatio = els.lockRatio.checked;
+  });
+}
 
-els.safeZone.addEventListener("change", () => {
-  state.safeZone = els.safeZone.checked;
-  drawCanvas();
-});
+if (els.safeZone) {
+  els.safeZone.addEventListener("change", () => {
+    state.safeZone = els.safeZone.checked;
+    drawCanvas();
+  });
+}
 
-els.ratioBtns.forEach(btn => {
+els.ratioBtns.forEach((btn) => {
   btn.addEventListener("click", () => {
     const [a, b] = btn.dataset.ratio.split(",").map(Number);
     state.aspectRatio = a / b;
@@ -689,15 +746,16 @@ function cropToBlob(maxBytes = null) {
   const { x, y, w, h } = state.crop;
   const draw = state.imageDraw;
 
-  const sx = Math.max(0, (x - draw.x) / draw.w * state.originalImage.width);
-  const sy = Math.max(0, (y - draw.y) / draw.h * state.originalImage.height);
-  const sw = Math.max(1, w / draw.w * state.originalImage.width);
-  const sh = Math.max(1, h / draw.h * state.originalImage.height);
+  const sx = Math.max(0, ((x - draw.x) / draw.w) * state.originalImage.width);
+  const sy = Math.max(0, ((y - draw.y) / draw.h) * state.originalImage.height);
+  const sw = Math.max(1, (w / draw.w) * state.originalImage.width);
+  const sh = Math.max(1, (h / draw.h) * state.originalImage.height);
 
   const out = document.createElement("canvas");
   out.width = Math.round(sw);
   out.height = Math.round(sh);
   const octx = out.getContext("2d");
+
   octx.drawImage(
     state.originalImage,
     sx, sy, sw, sh,
@@ -715,9 +773,8 @@ function cropToBlob(maxBytes = null) {
     const tryCompress = () => {
       out.toBlob((blob) => {
         if (!blob) return resolve(null);
-        if (blob.size <= maxBytes || quality <= 0.38) {
-          resolve(blob);
-        } else {
+        if (blob.size <= maxBytes || quality <= 0.38) resolve(blob);
+        else {
           quality -= 0.08;
           tryCompress();
         }
@@ -728,45 +785,49 @@ function cropToBlob(maxBytes = null) {
   });
 }
 
-els.btnApplyCrop.addEventListener("click", async () => {
-  if (!state.originalImage || !state.crop) {
-    setStatus("No crop selected");
-    return;
-  }
+if (els.btnApplyCrop) {
+  els.btnApplyCrop.addEventListener("click", async () => {
+    if (!state.originalImage || !state.crop) {
+      setStatus("No crop selected");
+      return;
+    }
 
-  const blob = await cropToBlob();
-  if (!blob) {
-    setStatus("Crop failed");
-    return;
-  }
+    const blob = await cropToBlob();
+    if (!blob) {
+      setStatus("Crop failed");
+      return;
+    }
 
-  state.croppedBlob = blob;
-  setStatus("Crop applied");
-  toast("Crop applied");
-});
+    state.croppedBlob = blob;
+    setStatus("Crop applied");
+    toast("Crop applied");
+  });
+}
 
-els.btnExport.addEventListener("click", async () => {
-  if (!state.originalImage || !state.crop) {
-    setStatus("No crop selected");
-    return;
-  }
+if (els.btnExport) {
+  els.btnExport.addEventListener("click", async () => {
+    if (!state.originalImage || !state.crop) {
+      setStatus("No crop selected");
+      return;
+    }
 
-  const blob = await cropToBlob(100 * 1024);
-  if (!blob) {
-    setStatus("Export failed");
-    return;
-  }
+    const blob = await cropToBlob(100 * 1024);
+    if (!blob) {
+      setStatus("Export failed");
+      return;
+    }
 
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = (state.imageName || "image").replace(/\.[^.]+$/, "") + "-crop.jpg";
-  a.click();
-  URL.revokeObjectURL(url);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = (state.imageName || "image").replace(/\.[^.]+$/, "") + "-crop.jpg";
+    a.click();
+    URL.revokeObjectURL(url);
 
-  setStatus(`Exported ${(blob.size / 1024).toFixed(1)}KB`);
-  toast("Exported");
-});
+    setStatus(`Exported ${(blob.size / 1024).toFixed(1)}KB`);
+    toast("Exported");
+  });
+}
 
 function clearImageTool() {
   state.originalImage = null;
@@ -775,31 +836,40 @@ function clearImageTool() {
   state.drag = null;
   state.zoom = 1;
   state.aspectRatio = null;
-  els.zoomSlider.value = "100";
-  els.fileInput.value = "";
-  els.sceneInput.value = "";
-  els.altText.value = "";
-  els.imgTitle.value = "";
-  els.caption.value = "";
-  els.canvasPlaceholder.style.display = "flex";
-  els.cropInfo.textContent = "No image loaded";
-  ctx.clearRect(0, 0, els.cropCanvas.width, els.cropCanvas.height);
+  state.imageDraw = null;
+
+  if (els.zoomSlider) els.zoomSlider.value = "100";
+  if (els.fileInput) els.fileInput.value = "";
+  if (els.sceneInput) els.sceneInput.value = "";
+  if (els.altText) els.altText.value = "";
+  if (els.imgTitle) els.imgTitle.value = "";
+  if (els.caption) els.caption.value = "";
+  if (els.canvasPlaceholder) els.canvasPlaceholder.style.display = "flex";
+  if (els.cropInfo) els.cropInfo.textContent = "No image loaded";
+
+  if (ctx && els.cropCanvas) {
+    ctx.clearRect(0, 0, els.cropCanvas.width, els.cropCanvas.height);
+  }
 }
 
-els.btnClearCrop.addEventListener("click", () => {
-  if (!state.originalImage) return;
-  state.crop = defaultCropRect();
-  drawCanvas();
-  setStatus("Crop reset");
-});
+if (els.btnClearCrop) {
+  els.btnClearCrop.addEventListener("click", () => {
+    if (!state.originalImage) return;
+    state.crop = defaultCropRect();
+    drawCanvas();
+    setStatus("Crop reset");
+  });
+}
 
-els.btnClearImg.addEventListener("click", () => {
-  clearImageTool();
-  setStatus("Image tool cleared");
-});
+if (els.btnClearImg) {
+  els.btnClearImg.addEventListener("click", () => {
+    clearImageTool();
+    setStatus("Image tool cleared");
+  });
+}
 
 async function generateImageSEO() {
-  const imageBlob = state.croppedBlob || await cropToBlob() || null;
+  const imageBlob = state.croppedBlob || (await cropToBlob()) || null;
 
   if (!imageBlob) {
     setStatus("Please upload an image first");
@@ -816,59 +886,79 @@ async function generateImageSEO() {
 
   const fd = new FormData();
   fd.append("image", imageBlob, "image.jpg");
-  fd.append("keyword", els.sceneInput.value.trim());
+  fd.append("keyword", (els.sceneInput.value || "").trim());
   fd.append("api_key", state.apiKey);
 
   setStatus("Generating image SEO...");
   setBadge("busy", "◌ Working");
 
   try {
-    const res = await fetch("/api/image-seo", {
-      method: "POST",
-      body: fd
-    });
+    const data = await (async () => {
+      const response = await fetch("/api/image-seo", { method: "POST", body: fd });
+      const rawText = await response.text();
 
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Image SEO failed");
+      let parsed = {};
+      try {
+        parsed = rawText ? JSON.parse(rawText) : {};
+      } catch {
+        throw new Error(
+          `Server returned non-JSON response (${response.status}). Response starts with: ${rawText.slice(0, 120)}`
+        );
+      }
+
+      if (!response.ok) {
+        throw new Error(parsed.error || "Image SEO failed");
+      }
+      return parsed;
+    })();
 
     els.altText.value = data.alt_text || "";
     els.imgTitle.value = data.img_title || "";
     els.caption.value = data.caption || "";
 
     refreshApiBadge();
-    setStatus(`Image SEO generated ✓`);
+    setStatus("Image SEO generated ✓");
     toast("Image SEO generated");
   } catch (err) {
     setStatus(err.message);
     setBadge("error", "● Error");
     toast("Failed");
+    console.error("generateImageSEO error:", err);
   }
 }
 
-els.btnGenImg.addEventListener("click", generateImageSEO);
+if (els.btnGenImg) els.btnGenImg.addEventListener("click", generateImageSEO);
 
-els.btnCopyAll.addEventListener("click", async () => {
-  const txt = [
-    `Alt Text: ${els.altText.value || ""}`,
-    `Image Title: ${els.imgTitle.value || ""}`,
-    `Caption: ${els.caption.value || ""}`
-  ].join("\n");
-  await copyText(txt, "Copied All SEO");
-});
+if (els.btnCopyAll) {
+  els.btnCopyAll.addEventListener("click", async () => {
+    const txt = [
+      `Alt Text: ${els.altText.value || ""}`,
+      `Image Title: ${els.imgTitle.value || ""}`,
+      `Caption: ${els.caption.value || ""}`,
+    ].join("\n");
+    await copyText(txt, "Copied All SEO");
+  });
+}
 
-els.cAlt.addEventListener("click", () => copyText(els.altText.value, "Copied Alt Text"));
-els.cTitle.addEventListener("click", () => copyText(els.imgTitle.value, "Copied Img Title"));
-els.cCap.addEventListener("click", () => copyText(els.caption.value, "Copied Caption"));
-els.cAll.addEventListener("click", () => {
-  const txt = [
-    `Alt Text: ${els.altText.value || ""}`,
-    `Image Title: ${els.imgTitle.value || ""}`,
-    `Caption: ${els.caption.value || ""}`
-  ].join("\n");
-  copyText(txt, "Copied All");
-});
+if (els.cAlt) els.cAlt.addEventListener("click", () => copyText(els.altText.value, "Copied Alt Text"));
+if (els.cTitle) els.cTitle.addEventListener("click", () => copyText(els.imgTitle.value, "Copied Img Title"));
+if (els.cCap) els.cCap.addEventListener("click", () => copyText(els.caption.value, "Copied Caption"));
+if (els.cAll) {
+  els.cAll.addEventListener("click", () => {
+    const txt = [
+      `Alt Text: ${els.altText.value || ""}`,
+      `Image Title: ${els.imgTitle.value || ""}`,
+      `Caption: ${els.caption.value || ""}`,
+    ].join("\n");
+    copyText(txt, "Copied All");
+  });
+}
 
+/* ─────────────────────────────────────────────
+   Init
+───────────────────────────────────────────── */
 window.addEventListener("resize", fitCanvasToWrap);
+
 window.addEventListener("load", () => {
   loadApiKey();
   clearSEOOutput();
