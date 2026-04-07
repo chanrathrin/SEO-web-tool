@@ -1,131 +1,135 @@
 import os
 import re
+import io
 import json
 import html as html_mod
-from typing import List, Dict, Optional
+import base64
+from typing import Dict, List, Tuple
 
 import requests
 from bs4 import BeautifulSoup
-from flask import Flask, jsonify, request, render_template_string
+from PIL import Image
+from flask import Flask, jsonify, render_template, request
 
 app = Flask(__name__)
 
 TOGETHER_BASE_URL = "https://api.together.xyz/v1"
 SEO_MODEL = os.getenv("TOGETHER_SEO_MODEL", "Qwen/Qwen2.5-7B-Instruct-Turbo")
+VISION_MODEL = os.getenv("TOGETHER_VISION_MODEL", "Qwen/Qwen3-VL-8B-Instruct")
+FORCED_TWITTER_USERNAME = os.getenv("FORCED_TWITTER_USERNAME", "").strip().lstrip("@")
 
-INDEX_HTML = """
-<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>WordPress SEO Studio</title>
-  <link rel="stylesheet" href="/static/style.css">
-</head>
-<body>
-  <div class="app-shell">
-    <header class="hero">
-      <div>
-        <h1>WordPress SEO Studio</h1>
-        <p>Paste WordPress HTML, Gutenberg blocks, or plain article text. Generate SEO output and keep video/embed content.</p>
-      </div>
-      <div class="hero-actions">
-        <button id="themeToggle" class="btn ghost" type="button">Toggle Theme</button>
-      </div>
-    </header>
+API_CONNECT_TIMEOUT = 8
+API_READ_TIMEOUT = 45
 
-    <section class="card">
-      <div class="field-row">
-        <div class="field grow">
-          <label for="apiKey">Together API Key (optional)</label>
-          <input id="apiKey" type="password" placeholder="Paste Together API key for AI SEO fields">
-        </div>
-      </div>
-    </section>
 
-    <section class="grid two">
-      <div class="card">
-        <div class="section-title">Input</div>
+def get_headers(api_key: str) -> Dict[str, str]:
+    return {
+        "Authorization": f"Bearer {api_key.strip()}",
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    }
 
-        <div class="field">
-          <label for="articleInput">Article / WordPress HTML</label>
-          <textarea id="articleInput" class="input-xl" placeholder="Paste article HTML, Gutenberg HTML, or plain article text here..."></textarea>
-        </div>
 
-        <div class="toolbar">
-          <button id="generateBtn" class="btn primary" type="button">Generate SEO</button>
-          <button id="clearBtn" class="btn" type="button">Clear</button>
-          <button id="copyInputBtn" class="btn" type="button">Copy Input</button>
-        </div>
+def verify_api_key(api_key: str) -> Tuple[bool, str]:
+    api_key = (api_key or "").strip()
+    if not api_key:
+        return False, "API key is empty."
 
-        <div id="statusBox" class="status info">Ready.</div>
-      </div>
+    try:
+        r = requests.get(
+            f"{TOGETHER_BASE_URL}/models",
+            headers=get_headers(api_key),
+            timeout=(API_CONNECT_TIMEOUT, 15),
+        )
+        if r.status_code >= 400:
+            try:
+                data = r.json()
+                detail = data.get("error", {}).get("message") or data.get("message") or r.text
+            except Exception:
+                detail = r.text
+            return False, f"HTTP {r.status_code}: {detail}"
+        return True, "API key is valid."
+    except Exception as e:
+        return False, str(e)
 
-      <div class="card">
-        <div class="section-title">SEO Fields</div>
 
-        <div class="field">
-          <label for="focusKeyphrase">Focus Keyphrase</label>
-          <div class="copy-row">
-            <input id="focusKeyphrase" readonly>
-            <button class="btn small" type="button" data-copy-target="focusKeyphrase">Copy</button>
-          </div>
-        </div>
+def chat_completion(
+    api_key: str,
+    model: str,
+    messages,
+    temperature: float = 0.2,
+    top_p: float = 0.9,
+    response_format=None,
+    max_tokens: int = 240,
+    timeout: int = API_READ_TIMEOUT,
+):
+    payload = {
+        "model": model,
+        "messages": messages,
+        "temperature": temperature,
+        "top_p": top_p,
+        "max_tokens": max_tokens,
+    }
+    if response_format:
+        payload["response_format"] = response_format
 
-        <div class="field">
-          <label for="seoTitle">SEO Title</label>
-          <div class="copy-row">
-            <input id="seoTitle" readonly>
-            <button class="btn small" type="button" data-copy-target="seoTitle">Copy</button>
-          </div>
-          <div id="seoTitleCounter" class="counter">0 / 60</div>
-        </div>
+    r = requests.post(
+        f"{TOGETHER_BASE_URL}/chat/completions",
+        headers=get_headers(api_key),
+        json=payload,
+        timeout=(API_CONNECT_TIMEOUT, timeout),
+    )
+    if r.status_code >= 400:
+        try:
+            data = r.json()
+            detail = data.get("error", {}).get("message") or data.get("message") or r.text
+        except Exception:
+            detail = r.text
+        raise RuntimeError(f"HTTP {r.status_code}: {detail}")
+    return r.json()
 
-        <div class="field">
-          <label for="metaDescription">Meta Description</label>
-          <div class="copy-row align-start">
-            <textarea id="metaDescription" readonly></textarea>
-            <button class="btn small" type="button" data-copy-target="metaDescription">Copy</button>
-          </div>
-          <div id="metaCounter" class="counter">0 / 160</div>
-        </div>
 
-        <div class="field">
-          <label for="detectedEmbeds">Detected Embeds / Videos</label>
-          <textarea id="detectedEmbeds" readonly></textarea>
-        </div>
-      </div>
-    </section>
+def extract_content(resp: dict) -> str:
+    choices = resp.get("choices") or []
+    if not choices:
+        return ""
+    msg = choices[0].get("message") or {}
+    content = msg.get("content", "")
+    if isinstance(content, list):
+        parts = []
+        for item in content:
+            if isinstance(item, dict):
+                text = item.get("text") or item.get("content") or ""
+                if text:
+                    parts.append(str(text))
+            elif item:
+                parts.append(str(item))
+        return "\n".join(parts).strip()
+    return str(content or "").strip()
 
-    <section class="card">
-      <div class="section-title">SEO Output HTML</div>
-      <div class="toolbar">
-        <button id="copyOutputBtn" class="btn success" type="button">Copy SEO Output</button>
-      </div>
-      <textarea id="seoOutput" class="input-xxl" readonly></textarea>
-    </section>
 
-    <section class="grid two">
-      <div class="card">
-        <div class="section-title">Google Preview</div>
-        <div class="preview-google">
-          <div class="preview-url">example.com › article</div>
-          <div id="previewTitle" class="preview-title">SEO Title will appear here</div>
-          <div id="previewMeta" class="preview-meta">Meta description will appear here.</div>
-        </div>
-      </div>
+def parse_json(raw: str) -> dict:
+    raw = (raw or "").strip()
+    if not raw:
+        raise ValueError("Empty model response")
 
-      <div class="card">
-        <div class="section-title">Detected Structure</div>
-        <textarea id="structureInfo" readonly></textarea>
-      </div>
-    </section>
-  </div>
+    tries = [raw]
+    cleaned = raw.replace("```json", "").replace("```", "").strip()
+    if cleaned != raw:
+        tries.append(cleaned)
+    m = re.search(r"\{.*\}", cleaned, re.S)
+    if m:
+        tries.append(m.group(0))
 
-  <script src="/static/script.js"></script>
-</body>
-</html>
-"""
+    last_err = None
+    for candidate in tries:
+        try:
+            data = json.loads(candidate)
+            if isinstance(data, dict):
+                return data
+        except Exception as e:
+            last_err = e
+    raise ValueError("Cannot parse JSON response") from last_err
 
 
 def normalize_spaces(text: str) -> str:
@@ -142,79 +146,109 @@ def clamp_text(text: str, limit: int) -> str:
     return clipped.rstrip(" -,:;|")
 
 
-def extract_content(resp: dict) -> str:
-    choices = resp.get("choices") or []
-    if not choices:
-        return ""
-    msg = choices[0].get("message") or {}
-    content = msg.get("content", "")
-    if isinstance(content, list):
-        parts = []
-        for item in content:
-            if isinstance(item, dict):
-                t = item.get("text") or item.get("content") or ""
-                if t:
-                    parts.append(str(t))
-            elif item:
-                parts.append(str(item))
-        return "\n".join(parts).strip()
-    return str(content or "").strip()
-
-
-def parse_json(raw: str) -> dict:
-    raw = (raw or "").strip()
-    if not raw:
-        raise ValueError("Empty AI response")
-    tries = [raw]
-    cleaned = raw.replace("```json", "").replace("```", "").strip()
-    if cleaned != raw:
-        tries.append(cleaned)
-    m = re.search(r"\{.*\}", cleaned, re.S)
-    if m:
-        tries.append(m.group(0))
-    last_err = None
-    for candidate in tries:
-        try:
-            data = json.loads(candidate)
-            if isinstance(data, dict):
-                return data
-        except Exception as e:
-            last_err = e
-    raise ValueError("Cannot parse AI JSON") from last_err
+def forced_public_twitter_url(tweet_id: str, fallback_url: str = "") -> str:
+    tweet_id = str(tweet_id or "").strip()
+    fallback_url = str(fallback_url or "").strip()
+    if tweet_id and FORCED_TWITTER_USERNAME:
+        return f"https://twitter.com/{FORCED_TWITTER_USERNAME}/status/{tweet_id}"
+    if fallback_url:
+        return fallback_url
+    if tweet_id:
+        return f"https://twitter.com/i/web/status/{tweet_id}"
+    return ""
 
 
 class EmbedHelper:
     YOUTUBE_PATTERNS = [
         r"youtube\.com/embed/([\w-]+)",
-        r"youtube\.com/watch\?[^\"'\s]*v=([\w-]+)",
+        r'youtube\.com/watch\?[^"\'\s]*v=([\w-]+)',
         r"youtu\.be/([\w-]+)",
         r"youtube\.com/v/([\w-]+)",
         r"youtube\.com/shorts/([\w-]+)",
     ]
-    TWITTER_PATTERNS = [
-        r"https?://(?:www\.)?(?:twitter|x)\.com/([A-Za-z0-9_]+)/status(?:es)?/(\d+)",
-        r"https?://(?:www\.)?twitter\.com/i/web/status/(\d+)",
-        r"platform\.twitter\.com/embed/Tweet\.html\?[^\"'\s]*(?:id|tweetId)=(\d+)",
-        r"data-tweet-id=[\"'](\d+)[\"']",
-    ]
     FACEBOOK_PATTERNS = [
-        r"facebook\.com/[^\s\"'<>]+/videos/(\d+)",
+        r'facebook\.com/[^\s"\'<>]+/videos/([\d]+)',
         r"facebook\.com/watch/?\?v=(\d+)",
-        r"fb\.watch/([\w-]+)",
+        r"facebook\.com/video/watch\?v=(\d+)",
         r"facebook\.com/video\.php\?v=(\d+)",
+        r"fb\.watch/([\w-]+)",
     ]
 
     @classmethod
-    def _decode_url(cls, value: str) -> str:
+    def decode_url(cls, value: str) -> str:
         return html_mod.unescape(str(value or "")).strip()
 
     @classmethod
-    def _yt_watch_url(cls, vid_id: str) -> str:
-        return f"https://www.youtube.com/watch?v={vid_id}"
+    def extract_public_twitter_url(cls, raw: str) -> str:
+        raw = cls.decode_url(raw)
+        if not raw:
+            return ""
+
+        direct = re.search(
+            r'https?://(?:www\.)?(?:twitter|x)\.com/([A-Za-z0-9_]+)/status(?:es)?/(\d+)',
+            raw, re.I
+        )
+        if direct:
+            return f"https://twitter.com/{direct.group(1)}/status/{direct.group(2)}"
+
+        for key in ("url", "href"):
+            m = re.search(rf'[?&]{key}=([^&"\']+)', raw, re.I)
+            if m:
+                decoded = cls.decode_url(m.group(1))
+                direct2 = re.search(
+                    r'https?://(?:www\.)?(?:twitter|x)\.com/([A-Za-z0-9_]+)/status(?:es)?/(\d+)',
+                    decoded, re.I
+                )
+                if direct2:
+                    return f"https://twitter.com/{direct2.group(1)}/status/{direct2.group(2)}"
+
+        src_m = re.search(r'src=["\']([^"\']+)["\']', raw, re.I)
+        if src_m:
+            src = cls.decode_url(src_m.group(1))
+            found = cls.extract_public_twitter_url(src)
+            if found:
+                return found
+
+        return ""
 
     @classmethod
-    def _yt_gutenberg(cls, vid_id: str) -> str:
-        url = cls._yt_watch_url(vid_id)
+    def extract_tweet_id(cls, raw: str) -> str:
+        raw = cls.decode_url(raw)
+        if not raw:
+            return ""
+        patterns = [
+            r'https?://(?:www\.)?(?:twitter|x)\.com/[A-Za-z0-9_]+/status(?:es)?/(\d+)',
+            r'(?:twitter|x)\.com/i/web/status/(\d+)',
+            r'data-tweet-id=["\'](\d+)["\']',
+            r'[?&](?:id|tweetId)=(\d+)',
+            r'https?://publish\.twitter\.com/\?url=.*?/status(?:es)?/(\d+)',
+        ]
+        for pat in patterns:
+            m = re.search(pat, raw, re.I)
+            if m:
+                return m.group(1)
+        src_m = re.search(r'src=["\']([^"\']+)["\']', raw, re.I)
+        if src_m:
+            src = cls.decode_url(src_m.group(1))
+            for pat in patterns:
+                m = re.search(pat, src, re.I)
+                if m:
+                    return m.group(1)
+        return ""
+
+    @classmethod
+    def normalize_twitter_public_url(cls, raw: str) -> str:
+        public_url = cls.extract_public_twitter_url(raw)
+        if public_url:
+            return public_url
+        tweet_id = cls.extract_tweet_id(raw)
+        if not tweet_id:
+            return ""
+        return forced_public_twitter_url(tweet_id)
+
+    @classmethod
+    def youtube_block(cls, vid_id: str) -> str:
+        url = f"https://www.youtube.com/watch?v={vid_id}"
         safe = html_mod.escape(url, quote=True)
         return (
             f'<!-- wp:embed {{"url":"{safe}","type":"video","providerNameSlug":"youtube","responsive":true}} -->\n'
@@ -224,15 +258,7 @@ class EmbedHelper:
         )
 
     @classmethod
-    def _twitter_public_url(cls, username: str, tweet_id: str) -> str:
-        return f"https://twitter.com/{username}/status/{tweet_id}"
-
-    @classmethod
-    def _twitter_generic_url(cls, tweet_id: str) -> str:
-        return f"https://twitter.com/i/web/status/{tweet_id}"
-
-    @classmethod
-    def _twitter_gutenberg(cls, url: str) -> str:
+    def twitter_block(cls, url: str) -> str:
         safe = html_mod.escape(url, quote=True)
         return (
             f'<!-- wp:embed {{"url":"{safe}","type":"rich","providerNameSlug":"twitter","responsive":true}} -->\n'
@@ -242,7 +268,7 @@ class EmbedHelper:
         )
 
     @classmethod
-    def _facebook_gutenberg(cls, url: str) -> str:
+    def facebook_block(cls, url: str) -> str:
         safe = html_mod.escape(url, quote=True)
         return (
             f'<!-- wp:embed {{"url":"{safe}","type":"rich","providerNameSlug":"facebook","responsive":true}} -->\n'
@@ -253,75 +279,76 @@ class EmbedHelper:
 
     @classmethod
     def detect(cls, raw: str) -> Dict[str, str]:
-        raw = cls._decode_url(raw)
-        low = raw.lower()
+        raw = str(raw or "")
+        raw_lower = raw.lower()
 
         for pat in cls.YOUTUBE_PATTERNS:
             m = re.search(pat, raw, re.I)
             if m:
                 vid_id = m.group(1).split("&")[0].split("?")[0].strip()
-                url = cls._yt_watch_url(vid_id)
+                watch_url = f"https://www.youtube.com/watch?v={vid_id}"
                 return {
                     "type": "youtube",
                     "icon": "▶",
-                    "label": f"YouTube Video [{vid_id}]",
-                    "html": cls._yt_gutenberg(vid_id),
-                    "html_classic": url,
-                    "src": url,
+                    "label": f"YouTube Video [ID: {vid_id}]",
+                    "html": cls.youtube_block(vid_id),
+                    "html_classic": watch_url,
+                    "src": watch_url,
                 }
 
-        m = re.search(
-            r"https?://(?:www\.)?(?:twitter|x)\.com/([A-Za-z0-9_]+)/status(?:es)?/(\d+)",
-            raw,
-            re.I,
-        )
-        if m:
-            username = m.group(1)
-            tweet_id = m.group(2)
-            public_url = cls._twitter_public_url(username, tweet_id)
+        tw_url = cls.normalize_twitter_public_url(raw)
+        if tw_url:
+            tweet_id = cls.extract_tweet_id(raw)
             return {
                 "type": "twitter",
                 "icon": "🐦",
-                "label": f"Twitter/X Post [{tweet_id}]",
-                "html": cls._twitter_gutenberg(public_url),
-                "html_classic": public_url,
-                "src": public_url,
+                "label": f"Twitter/X Post [ID: {tweet_id}]" if tweet_id else "Twitter/X Post",
+                "html": cls.twitter_block(tw_url),
+                "html_classic": tw_url,
+                "src": tw_url,
             }
-
-        for pat in cls.TWITTER_PATTERNS:
-            m = re.search(pat, raw, re.I)
-            if m:
-                tweet_id = m.group(m.lastindex or 1)
-                tw_url = cls._twitter_generic_url(tweet_id)
-                return {
-                    "type": "twitter",
-                    "icon": "🐦",
-                    "label": f"Twitter/X Post [{tweet_id}]",
-                    "html": cls._twitter_gutenberg(tw_url),
-                    "html_classic": tw_url,
-                    "src": tw_url,
-                }
 
         for pat in cls.FACEBOOK_PATTERNS:
             m = re.search(pat, raw, re.I)
             if m:
-                fb_url_match = re.search(r"https?://(?:www\.)?facebook\.com/[^\s\"'<>]+", raw, re.I)
-                fb_url = fb_url_match.group(0).rstrip('/"\'' ) if fb_url_match else raw
-                return {
-                    "type": "facebook",
-                    "icon": "📘",
-                    "label": "Facebook Video",
-                    "html": cls._facebook_gutenberg(fb_url),
-                    "html_classic": fb_url,
-                    "src": fb_url,
-                }
+                fb_url_m = re.search(r'https?://(?:www\.)?facebook\.com/[^\s"\'<>]+', raw, re.I)
+                if fb_url_m:
+                    fb_url = fb_url_m.group(0).rstrip('/"\'')
+                    return {
+                        "type": "facebook",
+                        "icon": "📘",
+                        "label": "Facebook Video",
+                        "html": cls.facebook_block(fb_url),
+                        "html_classic": fb_url,
+                        "src": fb_url,
+                    }
 
         src_m = re.search(r'src=["\'](https?://[^"\'>\s]+)["\']', raw, re.I)
-        if src_m:
-            src = cls._decode_url(src_m.group(1))
-            yt_info = cls.detect(src)
-            if yt_info["type"]:
-                return yt_info
+        if src_m and "<iframe" in raw_lower:
+            src = cls.decode_url(src_m.group(1))
+            yt = re.search(r'(?:youtube\.com/embed/|youtu\.be/|youtube\.com/watch\?v=)([\w-]+)', src, re.I)
+            if yt:
+                vid_id = yt.group(1)
+                watch_url = f"https://www.youtube.com/watch?v={vid_id}"
+                return {
+                    "type": "youtube",
+                    "icon": "▶",
+                    "label": f"YouTube Video [ID: {vid_id}]",
+                    "html": cls.youtube_block(vid_id),
+                    "html_classic": watch_url,
+                    "src": watch_url,
+                }
+            tw_url = cls.normalize_twitter_public_url(src)
+            if tw_url:
+                tweet_id = cls.extract_tweet_id(src)
+                return {
+                    "type": "twitter",
+                    "icon": "🐦",
+                    "label": f"Twitter/X Post [ID: {tweet_id}]",
+                    "html": cls.twitter_block(tw_url),
+                    "html_classic": tw_url,
+                    "src": tw_url,
+                }
             return {
                 "type": "generic",
                 "icon": "▶",
@@ -331,29 +358,7 @@ class EmbedHelper:
                 "src": src,
             }
 
-        bare = re.search(r"https?://[^\s<\"']+", raw, re.I)
-        if bare:
-            src = bare.group(0)
-            info = cls.detect(src)
-            if info["type"]:
-                return info
-            return {
-                "type": "generic",
-                "icon": "▶",
-                "label": "Embedded URL",
-                "html": src,
-                "html_classic": src,
-                "src": src,
-            }
-
-        return {
-            "type": "",
-            "icon": "",
-            "label": "",
-            "html": "",
-            "html_classic": "",
-            "src": "",
-        }
+        return {"type": "", "icon": "", "label": "", "html": raw, "html_classic": raw, "src": ""}
 
 
 def looks_html(text: str) -> bool:
@@ -365,12 +370,12 @@ def looks_html(text: str) -> bool:
     return any(token in s for token in html_tokens)
 
 
-def strip_wp_block_comments(raw: str) -> str:
+def strip_wp_block_comments_preserve_embeds(raw: str) -> str:
     raw = str(raw or "")
 
-    def _save_wp_embed(m):
-        block_json = m.group(1) or ""
-        inner_html = (m.group(2) or "").strip()
+    def save_wp_embed(match):
+        block_json = match.group(1) or ""
+        inner_html = (match.group(2) or "").strip()
 
         url_m = re.search(r'"url"\s*:\s*"([^"]+)"', block_json)
         embed_url = url_m.group(1) if url_m else ""
@@ -393,21 +398,20 @@ def strip_wp_block_comments(raw: str) -> str:
             info = EmbedHelper.detect(embed_url)
             if info["type"]:
                 return f"\n__PRESV_EMBED_START__{info['html']}__PRESV_EMBED_END__\n"
-            return f"\n__PRESV_EMBED_START__{inner_html}__PRESV_EMBED_END__\n"
 
         return f"\n{inner_html}\n"
 
     raw = re.sub(
         r'<!--\s*wp:embed\s*(\{[^}]*\}|\S*)\s*-->(.*?)<!--\s*/wp:embed\s*-->',
-        _save_wp_embed,
+        save_wp_embed,
         raw,
         flags=re.I | re.S,
     )
 
-    def _save_wp_video(m):
-        inner_html = (m.group(1) or "").strip()
+    def save_wp_video(match):
+        inner_html = (match.group(1) or "").strip()
         src_m = re.search(r'src=["\']([^"\']+)["\']', inner_html, re.I)
-        url_m = re.search(r'"url"\s*:\s*"([^"]+)"', m.group(0))
+        url_m = re.search(r'"url"\s*:\s*"([^"]+)"', match.group(0))
         embed_url = (url_m.group(1) if url_m else "") or (src_m.group(1) if src_m else "")
         if embed_url:
             info = EmbedHelper.detect(embed_url)
@@ -417,7 +421,7 @@ def strip_wp_block_comments(raw: str) -> str:
 
     raw = re.sub(
         r'<!--\s*wp:video[^-]*-->(.*?)<!--\s*/wp:video\s*-->',
-        _save_wp_video,
+        save_wp_video,
         raw,
         flags=re.I | re.S,
     )
@@ -431,17 +435,17 @@ def strip_wp_block_comments(raw: str) -> str:
         r'fb\.watch/[\w\-]+[^\s<"\']*)'
     )
 
-    def _convert_bare_video_url(m):
-        url = m.group(0).strip()
+    def convert_bare_video_url(match):
+        url = match.group(0).strip()
         info = EmbedHelper.detect(url)
         if info["type"]:
             return f"\n__PRESV_EMBED_START__{info['html']}__PRESV_EMBED_END__\n"
         return url
 
-    raw = re.sub(video_url_pat, _convert_bare_video_url, raw, flags=re.I)
+    raw = re.sub(video_url_pat, convert_bare_video_url, raw, flags=re.I)
 
-    def fix_paragraph_block(m):
-        inner = (m.group(1) or "").strip()
+    def fix_paragraph_block(match):
+        inner = (match.group(1) or "").strip()
         if not inner:
             return ""
         if re.match(r"^<p[\s>]", inner, re.I):
@@ -464,19 +468,18 @@ def strip_wp_block_comments(raw: str) -> str:
     return cleaned.strip()
 
 
-def wrap_plain_paragraphs(text: str) -> str:
-    video_url_pat = (
-        r'https?://(?:www\.)?(?:'
-        r'youtube\.com/watch\?[^\s<>"\']{5,}|'
-        r'youtu\.be/[\w\-]{5,}[^\s<>"\']*|'
-        r'youtube\.com/shorts/[\w\-]{5,}[^\s<>"\']*|'
-        r'(?:twitter|x)\.com/\S+/status/\d{5,}[^\s<>"\']*|'
-        r'facebook\.com/[^\s<>"\']+/videos/\d{5,}[^\s<>"\']*|'
-        r'fb\.watch/[\w\-]{3,}[^\s<>"\']*'
-        r')'
-    )
+def sanitize_html(raw: str) -> str:
+    raw = str(raw or "")
+    raw = re.sub(r"<script\b.*?</script>", "", raw, flags=re.I | re.S)
+    raw = re.sub(r"<style\b.*?</style>", "", raw, flags=re.I | re.S)
+    raw = re.sub(r"<noscript\b.*?</noscript>", "", raw, flags=re.I | re.S)
+    raw = re.sub(r"&nbsp;", " ", raw, flags=re.I)
+    raw = raw.replace("\u00a0", " ")
+    return raw.strip()
 
-    blocks = re.split(r'\n[ \t]*\n', text)
+
+def wrap_plain_paragraphs(text: str) -> str:
+    blocks = re.split(r"\n[ \t]*\n", text)
     result = []
 
     for block in blocks:
@@ -491,37 +494,9 @@ def wrap_plain_paragraphs(text: str) -> str:
         if re.match(r'^(?:&nbsp;|\xa0|\s)+$', block, re.I):
             continue
 
-        bare_url_m = re.match(r'^(' + video_url_pat + r')$', block.strip(), re.I)
-        if bare_url_m:
-            url = bare_url_m.group(1).strip()
-            info = EmbedHelper.detect(url)
-            if info["type"]:
-                result.append(f"__PRESV_EMBED_START__{info['html']}__PRESV_EMBED_END__")
-                continue
-
-        def _inline_url_to_embed(m):
-            url = m.group(0).strip()
-            info = EmbedHelper.detect(url)
-            if info["type"]:
-                return f" __PRESV_EMBED_START__{info['html']}__PRESV_EMBED_END__ "
-            return url
-
-        block = re.sub(video_url_pat, _inline_url_to_embed, block, flags=re.I)
         result.append(f"<p>{block}</p>")
 
     return "\n\n".join(result).strip()
-
-
-def sanitize_html(raw: str) -> str:
-    raw = str(raw or "")
-
-    raw = re.sub(r"<script\b.*?</script>", "", raw, flags=re.I | re.S)
-    raw = re.sub(r"<style\b.*?</style>", "", raw, flags=re.I | re.S)
-    raw = re.sub(r"<noscript\b.*?</noscript>", "", raw, flags=re.I | re.S)
-    raw = re.sub(r"&nbsp;", " ", raw, flags=re.I)
-    raw = re.sub(r"\u00a0", " ", raw)
-
-    return raw.strip()
 
 
 def html_to_text_preserving_embeds(raw_html: str) -> str:
@@ -582,7 +557,7 @@ def derive_focus_keyphrase(text: str) -> str:
         "this", "that", "with", "from", "your", "have", "will", "about", "into",
         "after", "before", "their", "there", "they", "them", "what", "when",
         "where", "which", "while", "would", "could", "should", "article",
-        "video", "embed"
+        "video", "embed", "from", "were", "been", "being", "also", "more"
     }
     freq = {}
     for w in words:
@@ -637,31 +612,18 @@ ARTICLE:
 {plain_text[:3500]}
 """
 
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-        "Accept": "application/json",
-    }
-
-    payload = {
-        "model": SEO_MODEL,
-        "messages": [{"role": "user", "content": prompt}],
-        "temperature": 0.2,
-        "top_p": 0.9,
-        "response_format": {"type": "json_object"},
-        "max_tokens": 220,
-    }
-
     try:
-        r = requests.post(
-            f"{TOGETHER_BASE_URL}/chat/completions",
-            headers=headers,
-            json=payload,
-            timeout=(8, 30),
+        resp = chat_completion(
+            api_key=api_key,
+            model=SEO_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.2,
+            top_p=0.9,
+            response_format={"type": "json_object"},
+            max_tokens=220,
+            timeout=35,
         )
-        r.raise_for_status()
-        data = r.json()
-        parsed = parse_json(extract_content(data))
+        parsed = parse_json(extract_content(resp))
         focus = clamp_text(str(parsed.get("focus_keyphrase", "")).strip(), 60)
         seo_title = clamp_text(str(parsed.get("seo_title", "")).strip(), 60)
         meta = clamp_text(str(parsed.get("meta_description", "")).strip(), 160)
@@ -708,13 +670,13 @@ def build_output_html(title: str, intro: str, cleaned_html: str) -> str:
 
     content = cleaned_html.strip()
 
-    def _restore_embed_marker(m):
-        inner = (m.group(1) or "").strip()
+    def restore_embed_marker(match):
+        inner = (match.group(1) or "").strip()
         return "\n" + inner + "\n"
 
     content = re.sub(
         r"__PRESV_EMBED_START__(.*?)__PRESV_EMBED_END__",
-        _restore_embed_marker,
+        restore_embed_marker,
         content,
         flags=re.S,
     )
@@ -725,22 +687,19 @@ def build_output_html(title: str, intro: str, cleaned_html: str) -> str:
     return output
 
 
-def process_input(raw: str) -> Dict[str, str]:
+def process_article_input(raw: str) -> Dict[str, str]:
     raw = str(raw or "").strip()
     if not raw:
         raise ValueError("Article input is empty.")
 
     has_wp_blocks = "<!-- wp:" in raw or "<!-- /wp:" in raw
-
     working = raw
     title_hint = ""
 
     if has_wp_blocks:
-        working = strip_wp_block_comments(working)
+        working = strip_wp_block_comments_preserve_embeds(working)
 
     if looks_html(working):
-        if "__PRESV_EMBED_START__" not in working and re.search(r"<iframe|<blockquote|<video|<figure", working, re.I):
-            pass
         working = sanitize_html(working)
         title_hint = extract_title_from_html(raw) or extract_title_from_html(working)
         if not re.search(r"<p\b", working, re.I) and "__PRESV_EMBED_START__" in working:
@@ -761,14 +720,7 @@ def process_input(raw: str) -> Dict[str, str]:
     plain = raw
     plain = re.sub(r"&nbsp;", " ", plain, flags=re.I)
     plain = re.sub(r"&#\d+;|&[a-z]+;", " ", plain, flags=re.I)
-    plain = re.sub(r"\u00a0", " ", plain)
-
-    def _convert_url_to_embed(m):
-        url = m.group(0).strip()
-        info = EmbedHelper.detect(url)
-        if info["type"]:
-            return f"\n__PRESV_EMBED_START__{info['html']}__PRESV_EMBED_END__\n"
-        return url
+    plain = plain.replace("\u00a0", " ")
 
     video_url_pat = (
         r'https?://(?:www\.)?(?:youtube\.com/watch\?[^\s<"\']+|'
@@ -778,7 +730,15 @@ def process_input(raw: str) -> Dict[str, str]:
         r'facebook\.com/[^\s<"\']+/videos/[^\s<"\']+|'
         r'fb\.watch/[\w\-]+[^\s<"\']*)'
     )
-    plain = re.sub(video_url_pat, _convert_url_to_embed, plain, flags=re.I)
+
+    def convert_url_to_embed(match):
+        url = match.group(0).strip()
+        info = EmbedHelper.detect(url)
+        if info["type"]:
+            return f"\n__PRESV_EMBED_START__{info['html']}__PRESV_EMBED_END__\n"
+        return url
+
+    plain = re.sub(video_url_pat, convert_url_to_embed, plain, flags=re.I)
 
     blocks = []
     for chunk in re.split(r"\n\s*\n", plain):
@@ -809,22 +769,129 @@ def process_input(raw: str) -> Dict[str, str]:
     }
 
 
+def decode_image_data_url(data_url: str) -> Image.Image:
+    if not data_url or not data_url.startswith("data:image/"):
+        raise ValueError("Invalid image data")
+    header, encoded = data_url.split(",", 1)
+    binary = base64.b64decode(encoded)
+    img = Image.open(io.BytesIO(binary)).convert("RGB")
+    return img
+
+
+def image_to_data_url_jpeg(img: Image.Image, max_side: int = 1280, quality: int = 88) -> str:
+    img = img.convert("RGB")
+    w, h = img.size
+    longest = max(w, h)
+    if longest > max_side:
+        scale = max_side / float(longest)
+        img = img.resize((max(1, int(w * scale)), max(1, int(h * scale))), Image.LANCZOS)
+
+    bio = io.BytesIO()
+    img.save(bio, format="JPEG", quality=quality, optimize=True)
+    b64 = base64.b64encode(bio.getvalue()).decode()
+    return f"data:image/jpeg;base64,{b64}"
+
+
+def fallback_image_seo_fields(scene_notes: str = "") -> Dict[str, str]:
+    scene_notes = normalize_spaces(scene_notes)
+    if scene_notes:
+        title = clamp_text(scene_notes.title(), 60)
+        alt_text = clamp_text(f"{scene_notes} featured image", 125)
+        caption = clamp_text(f"Featured image showing {scene_notes.lower()} in the article.", 160)
+    else:
+        title = "Featured Image"
+        alt_text = "Featured image for the article"
+        caption = "Featured image used for the article."
+    return {
+        "alt_text": alt_text,
+        "img_title": title,
+        "caption": caption,
+    }
+
+
+def generate_ai_image_seo(api_key: str, image_data_url: str, scene_notes: str = "") -> Dict[str, str]:
+    api_key = (api_key or "").strip()
+    if not api_key:
+        return fallback_image_seo_fields(scene_notes)
+
+    scene_hint = f'\n\nContext/keyword hint from editor: "{scene_notes.strip()}"' if scene_notes.strip() else ""
+    prompt = f"""You are a WordPress SEO specialist writing metadata for a FEATURED IMAGE.
+
+Look at the image carefully and return ONLY valid JSON with exactly these 3 keys:
+
+{{
+  "alt_text": "...",
+  "img_title": "...",
+  "caption": "..."
+}}
+
+RULES:
+alt_text: 8-15 words describing what is visually in the image
+img_title: 4-10 words, Title Case
+caption: ONE complete sentence 15-30 words, journalistic style
+
+Output ONLY the JSON object. No markdown, no explanation.{scene_hint}
+"""
+
+    try:
+        resp = chat_completion(
+            api_key=api_key,
+            model=VISION_MODEL,
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {"type": "image_url", "image_url": {"url": image_data_url}},
+                    ],
+                }
+            ],
+            temperature=0.15,
+            top_p=0.85,
+            response_format={"type": "json_object"},
+            max_tokens=180,
+            timeout=90,
+        )
+        raw_data = parse_json(extract_content(resp))
+        alt_text = clamp_text(str(raw_data.get("alt_text", "")).strip(), 125)
+        img_title = clamp_text(str(raw_data.get("img_title", "")).strip(), 80)
+        caption = clamp_text(str(raw_data.get("caption", "")).strip(), 180)
+
+        if len(alt_text) < 10 or len(img_title) < 5 or len(caption) < 15:
+            return fallback_image_seo_fields(scene_notes)
+
+        return {
+            "alt_text": alt_text,
+            "img_title": img_title,
+            "caption": caption,
+        }
+    except Exception:
+        return fallback_image_seo_fields(scene_notes)
+
+
 @app.get("/")
 def index():
-    return render_template_string(INDEX_HTML)
+    return render_template("index.html")
 
 
-@app.post("/generate")
-def generate():
-    payload = request.get_json(silent=True) or {}
-    raw = (payload.get("article") or "").strip()
-    api_key = (payload.get("api_key") or "").strip()
+@app.post("/api/verify-key")
+def api_verify_key():
+    data = request.get_json(silent=True) or {}
+    ok, message = verify_api_key(data.get("api_key", ""))
+    return jsonify({"ok": ok, "message": message})
+
+
+@app.post("/api/generate-seo")
+def api_generate_seo():
+    data = request.get_json(silent=True) or {}
+    raw = (data.get("article") or "").strip()
+    api_key = (data.get("api_key") or "").strip()
 
     if not raw:
         return jsonify({"ok": False, "error": "Article input is empty."}), 400
 
     try:
-        processed = process_input(raw)
+        processed = process_article_input(raw)
         seo = generate_ai_seo(
             api_key=api_key,
             plain_text=processed["plain_text"],
@@ -848,6 +915,25 @@ def generate():
             "seo_output": final_output,
             "structure": processed["structure"],
         })
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.post("/api/generate-image-seo")
+def api_generate_image_seo():
+    data = request.get_json(silent=True) or {}
+    api_key = (data.get("api_key") or "").strip()
+    image_data_url = (data.get("image_data_url") or "").strip()
+    scene_notes = (data.get("scene_notes") or "").strip()
+
+    if not image_data_url:
+        return jsonify({"ok": False, "error": "Image is missing."}), 400
+
+    try:
+        img = decode_image_data_url(image_data_url)
+        resized_data_url = image_to_data_url_jpeg(img, max_side=1280, quality=88)
+        result = generate_ai_image_seo(api_key, resized_data_url, scene_notes)
+        return jsonify({"ok": True, **result})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
