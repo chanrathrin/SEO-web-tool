@@ -1,21 +1,23 @@
 const STORAGE_KEY = "wp_seo_studio_api_key";
 
-const statusLabel = document.getElementById("statusLabel");
 const apiBadge = document.getElementById("apiBadge");
-
-const tabButtons = document.querySelectorAll(".tab-btn");
-const tabPanels = document.querySelectorAll(".tab-panel");
+const statusLabel = document.getElementById("statusLabel");
 
 const openApiSettingsBtn = document.getElementById("openApiSettingsBtn");
 const closeApiSettingsBtn = document.getElementById("closeApiSettingsBtn");
 const apiModal = document.getElementById("apiModal");
+const apiModalStatus = document.getElementById("apiModalStatus");
 const apiKeyInput = document.getElementById("apiKeyInput");
+const showApiKeyCheckbox = document.getElementById("showApiKeyCheckbox");
 const testApiKeyBtn = document.getElementById("testApiKeyBtn");
 const saveApiKeyBtn = document.getElementById("saveApiKeyBtn");
 const clearApiKeyBtn = document.getElementById("clearApiKeyBtn");
-const showApiKeyCheckbox = document.getElementById("showApiKeyCheckbox");
-const apiModalStatus = document.getElementById("apiModalStatus");
 
+// Tabs
+const tabButtons = document.querySelectorAll(".tab-btn");
+const tabPanels = document.querySelectorAll(".tab-panel");
+
+// SEO tab
 const articleInput = document.getElementById("articleInput");
 const generateSeoBtn = document.getElementById("generateSeoBtn");
 const clearSeoBtn = document.getElementById("clearSeoBtn");
@@ -26,49 +28,58 @@ const copySeoOutputBtn = document.getElementById("copySeoOutputBtn");
 const focusKeyphrase = document.getElementById("focusKeyphrase");
 const seoTitle = document.getElementById("seoTitle");
 const metaDescription = document.getElementById("metaDescription");
-const detectedEmbeds = document.getElementById("detectedEmbeds");
 const seoOutput = document.getElementById("seoOutput");
+const detectedEmbeds = document.getElementById("detectedEmbeds");
 const structureInfo = document.getElementById("structureInfo");
 const previewTitle = document.getElementById("previewTitle");
 const previewMeta = document.getElementById("previewMeta");
 const seoTitleCounter = document.getElementById("seoTitleCounter");
 const metaCounter = document.getElementById("metaCounter");
 
+// Image tab
 const imageInput = document.getElementById("imageInput");
 const sceneNotes = document.getElementById("sceneNotes");
 const generateImageSeoBtn = document.getElementById("generateImageSeoBtn");
 const clearImageBtn = document.getElementById("clearImageBtn");
 const imagePreview = document.getElementById("imagePreview");
 const imagePlaceholder = document.getElementById("imagePlaceholder");
+
 const altText = document.getElementById("altText");
 const imgTitle = document.getElementById("imgTitle");
 const caption = document.getElementById("caption");
 const copyAllImageBtn = document.getElementById("copyAllImageBtn");
 
-function currentApiKey() {
+
+function getApiKey() {
   return localStorage.getItem(STORAGE_KEY) || "";
 }
 
-function setStatus(message) {
+function setStatus(message, tone = "normal") {
   statusLabel.textContent = message;
+  statusLabel.className = "";
+  if (tone) {
+    statusLabel.classList.add(tone);
+  }
 }
 
-function setApiBadge() {
-  const key = currentApiKey();
-  apiBadge.classList.remove("off", "saved");
-  if (key) {
+function updateApiBadge() {
+  const apiKey = getApiKey();
+  if (apiKey) {
     apiBadge.textContent = "● API key saved";
-    apiBadge.classList.add("saved");
+    apiBadge.classList.remove("off");
+    apiBadge.classList.add("on");
   } else {
     apiBadge.textContent = "○ API not configured";
+    apiBadge.classList.remove("on");
     apiBadge.classList.add("off");
   }
 }
 
 function openApiModal() {
-  apiKeyInput.value = currentApiKey();
   apiModal.classList.remove("hidden");
   apiModal.setAttribute("aria-hidden", "false");
+  apiKeyInput.value = getApiKey();
+  apiModalStatus.textContent = apiKeyInput.value ? "Current key loaded." : "Paste your API key below.";
 }
 
 function closeApiModal() {
@@ -77,15 +88,29 @@ function closeApiModal() {
 }
 
 function switchTab(tabId) {
-  tabButtons.forEach((btn) => {
+  tabButtons.forEach(btn => {
     btn.classList.toggle("active", btn.dataset.tab === tabId);
   });
-  tabPanels.forEach((panel) => {
+  tabPanels.forEach(panel => {
     panel.classList.toggle("active", panel.id === tabId);
   });
 }
 
-function updatePreview() {
+async function copyText(value, successMsg = "Copied.") {
+  const text = String(value || "").trim();
+  if (!text) {
+    setStatus("Nothing to copy.", "warn");
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(text);
+    setStatus(successMsg, "success");
+  } catch {
+    setStatus("Copy failed.", "error");
+  }
+}
+
+function updateSeoPreview() {
   const title = (seoTitle.value || "").trim();
   const meta = (metaDescription.value || "").trim();
 
@@ -107,40 +132,26 @@ function updatePreview() {
   else if (meta.length > 0) metaCounter.classList.add("warn");
 }
 
-async function copyText(value, successLabel) {
-  if (!value || !value.trim()) {
-    setStatus("Nothing to copy.");
-    return;
-  }
-  try {
-    await navigator.clipboard.writeText(value);
-    setStatus(successLabel || "Copied.");
-  } catch (err) {
-    setStatus("Copy failed.");
-  }
-}
-
 async function testApiKey() {
   const apiKey = apiKeyInput.value.trim();
   if (!apiKey) {
-    apiModalStatus.textContent = "API key is empty.";
+    apiModalStatus.textContent = "Paste API key first.";
     return;
   }
 
   apiModalStatus.textContent = "Testing API key...";
   try {
-    const res = await fetch("/api/verify-key", {
+    const res = await fetch("/api/test-key", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json"
+      },
       body: JSON.stringify({ api_key: apiKey })
     });
     const data = await res.json();
-    if (!res.ok || !data.ok) {
-      throw new Error(data.error || "API key test failed.");
-    }
-    apiModalStatus.textContent = "✓ API key is valid.";
+    apiModalStatus.textContent = data.message || (data.ok ? "API key is valid." : "API key test failed.");
   } catch (err) {
-    apiModalStatus.textContent = `✗ ${err.message || "API key test failed."}`;
+    apiModalStatus.textContent = err.message || "API key test failed.";
   }
 }
 
@@ -151,38 +162,41 @@ function saveApiKey() {
     return;
   }
   localStorage.setItem(STORAGE_KEY, apiKey);
-  setApiBadge();
-  apiModalStatus.textContent = "✓ API key saved and active.";
-  setStatus("API key loaded");
+  updateApiBadge();
+  apiModalStatus.textContent = "API key saved in browser.";
+  setStatus("API key saved.", "success");
 }
 
 function clearApiKey() {
   localStorage.removeItem(STORAGE_KEY);
   apiKeyInput.value = "";
-  setApiBadge();
-  apiModalStatus.textContent = "Saved key cleared.";
-  setStatus("API key cleared");
+  updateApiBadge();
+  apiModalStatus.textContent = "Saved API key cleared.";
+  setStatus("Saved API key cleared.", "warn");
 }
 
 async function generateSeo() {
   const article = articleInput.value.trim();
   if (!article) {
-    setStatus("Paste article input first");
+    setStatus("Paste article input first.", "error");
     return;
   }
 
   generateSeoBtn.disabled = true;
-  setStatus("Generating SEO...");
+  setStatus("Generating SEO...", "normal");
 
   try {
     const res = await fetch("/api/generate-seo", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json"
+      },
       body: JSON.stringify({
         article,
-        api_key: currentApiKey()
+        api_key: getApiKey()
       })
     });
+
     const data = await res.json();
     if (!res.ok || !data.ok) {
       throw new Error(data.error || "Failed to generate SEO.");
@@ -194,10 +208,11 @@ async function generateSeo() {
     detectedEmbeds.value = data.detected_embeds || "";
     seoOutput.value = data.seo_output || "";
     structureInfo.value = data.structure || "";
-    updatePreview();
-    setStatus("SEO generated successfully");
+
+    updateSeoPreview();
+    setStatus("SEO generated successfully.", "success");
   } catch (err) {
-    setStatus(err.message || "Failed to generate SEO.");
+    setStatus(err.message || "Unexpected error.", "error");
   } finally {
     generateSeoBtn.disabled = false;
   }
@@ -211,20 +226,22 @@ function clearSeo() {
   detectedEmbeds.value = "";
   seoOutput.value = "";
   structureInfo.value = "";
-  updatePreview();
-  setStatus("SEO fields cleared");
+  updateSeoPreview();
+  setStatus("SEO fields cleared.", "warn");
 }
 
-function previewImage(file) {
+function previewSelectedImage() {
+  const file = imageInput.files && imageInput.files[0];
   if (!file) {
     imagePreview.src = "";
     imagePreview.classList.add("hidden");
     imagePlaceholder.classList.remove("hidden");
     return;
   }
+
   const reader = new FileReader();
-  reader.onload = (e) => {
-    imagePreview.src = e.target.result;
+  reader.onload = () => {
+    imagePreview.src = reader.result;
     imagePreview.classList.remove("hidden");
     imagePlaceholder.classList.add("hidden");
   };
@@ -232,25 +249,26 @@ function previewImage(file) {
 }
 
 async function generateImageSeo() {
-  const file = imageInput.files[0];
+  const file = imageInput.files && imageInput.files[0];
   if (!file) {
-    setStatus("Upload an image first");
+    setStatus("Upload image first.", "error");
     return;
   }
 
   generateImageSeoBtn.disabled = true;
-  setStatus("Reading image & generating WordPress SEO fields...");
+  setStatus("Generating image SEO...", "normal");
 
   try {
-    const form = new FormData();
-    form.append("image", file);
-    form.append("scene_notes", sceneNotes.value.trim());
-    form.append("api_key", currentApiKey());
+    const formData = new FormData();
+    formData.append("image", file);
+    formData.append("scene_notes", sceneNotes.value.trim());
+    formData.append("api_key", getApiKey());
 
     const res = await fetch("/api/generate-image-seo", {
       method: "POST",
-      body: form
+      body: formData
     });
+
     const data = await res.json();
     if (!res.ok || !data.ok) {
       throw new Error(data.error || "Failed to generate image SEO.");
@@ -259,9 +277,10 @@ async function generateImageSeo() {
     altText.value = data.alt_text || "";
     imgTitle.value = data.img_title || "";
     caption.value = data.caption || "";
-    setStatus("Image SEO fields ready");
+
+    setStatus("Image SEO generated successfully.", "success");
   } catch (err) {
-    setStatus(err.message || "Failed to generate image SEO.");
+    setStatus(err.message || "Unexpected error.", "error");
   } finally {
     generateImageSeoBtn.disabled = false;
   }
@@ -273,71 +292,71 @@ function clearImageSeo() {
   altText.value = "";
   imgTitle.value = "";
   caption.value = "";
-  previewImage(null);
-  setStatus("Image SEO fields cleared");
+  imagePreview.src = "";
+  imagePreview.classList.add("hidden");
+  imagePlaceholder.classList.remove("hidden");
+  setStatus("Image SEO fields cleared.", "warn");
 }
 
-function copyAllSeo() {
-  const value = [
-    `Focus Keyphrase:\n${focusKeyphrase.value.trim()}`,
-    `SEO Title:\n${seoTitle.value.trim()}`,
-    `Meta Description:\n${metaDescription.value.trim()}`,
-  ].join("\n\n");
-  copyText(value, "Copied all SEO fields");
+function copyAllSeoFields() {
+  const parts = [
+    `Focus Keyphrase: ${focusKeyphrase.value || ""}`,
+    `SEO Title: ${seoTitle.value || ""}`,
+    `Meta Description: ${metaDescription.value || ""}`
+  ];
+  copyText(parts.join("\n"), "All SEO fields copied.");
 }
 
-function copyAllImage() {
-  const value = [
-    `Alt Text:\n${altText.value.trim()}`,
-    `Image Title:\n${imgTitle.value.trim()}`,
-    `Caption:\n${caption.value.trim()}`,
-  ].join("\n\n");
-  copyText(value, "Copied all image fields");
+function copyAllImageFields() {
+  const parts = [
+    `Alt Text: ${altText.value || ""}`,
+    `Image Title: ${imgTitle.value || ""}`,
+    `Caption: ${caption.value || ""}`
+  ];
+  copyText(parts.join("\n"), "All image fields copied.");
 }
 
+
+// Event wiring
 openApiSettingsBtn.addEventListener("click", openApiModal);
 closeApiSettingsBtn.addEventListener("click", closeApiModal);
 testApiKeyBtn.addEventListener("click", testApiKey);
 saveApiKeyBtn.addEventListener("click", saveApiKey);
 clearApiKeyBtn.addEventListener("click", clearApiKey);
+
 showApiKeyCheckbox.addEventListener("change", () => {
   apiKeyInput.type = showApiKeyCheckbox.checked ? "text" : "password";
-});
-
-generateSeoBtn.addEventListener("click", generateSeo);
-clearSeoBtn.addEventListener("click", clearSeo);
-copyInputBtn.addEventListener("click", () => copyText(articleInput.value, "Input copied"));
-copyAllSeoBtn.addEventListener("click", copyAllSeo);
-copySeoOutputBtn.addEventListener("click", () => copyText(seoOutput.value, "SEO output copied"));
-
-generateImageSeoBtn.addEventListener("click", generateImageSeo);
-clearImageBtn.addEventListener("click", clearImageSeo);
-copyAllImageBtn.addEventListener("click", copyAllImage);
-imageInput.addEventListener("change", (e) => previewImage(e.target.files[0] || null));
-
-tabButtons.forEach((btn) => {
-  btn.addEventListener("click", () => switchTab(btn.dataset.tab));
-});
-
-document.querySelectorAll("[data-copy-target]").forEach((btn) => {
-  btn.addEventListener("click", () => {
-    const id = btn.dataset.copyTarget;
-    const el = document.getElementById(id);
-    if (!el) return;
-    copyText(el.value, `${id} copied`);
-  });
 });
 
 apiModal.addEventListener("click", (e) => {
   if (e.target === apiModal) closeApiModal();
 });
 
-document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape" && !apiModal.classList.contains("hidden")) {
-    closeApiModal();
-  }
+tabButtons.forEach(btn => {
+  btn.addEventListener("click", () => switchTab(btn.dataset.tab));
 });
 
-setApiBadge();
-updatePreview();
-setStatus("Ready.");
+generateSeoBtn.addEventListener("click", generateSeo);
+clearSeoBtn.addEventListener("click", clearSeo);
+copyInputBtn.addEventListener("click", () => copyText(articleInput.value, "Input copied."));
+copyAllSeoBtn.addEventListener("click", copyAllSeoFields);
+copySeoOutputBtn.addEventListener("click", () => copyText(seoOutput.value, "SEO output copied."));
+
+imageInput.addEventListener("change", previewSelectedImage);
+generateImageSeoBtn.addEventListener("click", generateImageSeo);
+clearImageBtn.addEventListener("click", clearImageSeo);
+copyAllImageBtn.addEventListener("click", copyAllImageFields);
+
+document.querySelectorAll("[data-copy-target]").forEach(btn => {
+  btn.addEventListener("click", () => {
+    const id = btn.getAttribute("data-copy-target");
+    const el = document.getElementById(id);
+    if (!el) return;
+    copyText(el.value, `${id} copied.`);
+  });
+});
+
+// Init
+updateApiBadge();
+updateSeoPreview();
+previewSelectedImage();
