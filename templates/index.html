@@ -7,236 +7,306 @@
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-<!-- TOP BAR -->
+
+<!-- ══════════════════ TOPBAR (matches desktop header) ════════════════════ -->
 <header class="topbar">
   <div class="topbar-left">
-    <span class="topbar-logo">WordPress SEO Studio</span>
-    <span class="topbar-sub">SEO Formatter · Image Crop · AI Image SEO · Yoast Fields</span>
+    <span class="logo-text">WordPress SEO Studio</span>
+    <span class="logo-sub">SEO Formatter · Image Crop · AI Image SEO · Yoast Fields · AI SEO Fields</span>
   </div>
   <div class="topbar-right">
-    <span id="api-badge" class="badge badge-off">○ API not configured</span>
-    <button class="btn btn-cyan" onclick="openApiModal()">⚙ API Settings</button>
+    <span id="api-badge" class="badge badge-off">○  API not configured</span>
+    <button class="btn btn-cyan" id="api-settings-btn" onclick="openApiModal()">⚙  API Settings</button>
   </div>
 </header>
 
-<!-- TABS -->
-<nav class="tab-nav">
-  <button class="tab-btn active" onclick="switchTab('seo', this)">📝 SEO Formatter</button>
-  <button class="tab-btn" onclick="switchTab('image', this)">🖼 Image SEO</button>
-</nav>
+<!-- ══════════════════ TAB NAV (CTkTabview) ══════════════════════════════ -->
+<div class="tabview">
+  <button class="tab-btn active" id="tab-btn-seo"   onclick="switchTab('seo',this)">📝  SEO Formatter</button>
+  <button class="tab-btn"        id="tab-btn-image" onclick="switchTab('image',this)">🖼  Image SEO</button>
+</div>
 
-<!-- ═══════════════════════════════════════════════════════ TAB 1: SEO FORMATTER -->
+<!-- ════════════════════════════════════════════════════════════════════════
+     TAB 1 — SEO FORMATTER
+════════════════════════════════════════════════════════════════════════ -->
 <div id="tab-seo" class="tab-content active">
-  <div class="two-col">
 
-    <!-- LEFT PANEL: Input -->
-    <div class="panel">
-      <div class="panel-header">
-        <span>📥 Article Input</span>
-        <span id="lang-badge" class="badge badge-blue">🌐 —</span>
-      </div>
+  <!-- Top action bar -->
+  <div class="action-bar">
+    <div class="action-bar-inner">
+      <button class="btn btn-green" id="seo-gen-btn" onclick="processArticle()">⚡ Generate SEO</button>
+      <button class="btn btn-purple" id="ai-seo-btn" onclick="openAiSeoPopup()">🤖 AI SEO Fields</button>
+      <button class="btn btn-teal"   onclick="copyWpHtml()">⧉  Copy WP HTML</button>
+      <button class="btn btn-red"    onclick="clearInput()">✕  Clear Input</button>
+      <button class="btn btn-red"    onclick="clearOutput()">✕  Clear Output</button>
+    </div>
+  </div>
 
-      <div class="field-row">
-        <input type="text" id="url-input" class="input-field" placeholder="Paste article URL here…">
-        <button id="fetch-btn" class="btn btn-purple" onclick="fetchUrl()">⬇ Fetch &amp; Generate</button>
-      </div>
+  <!-- URL fetch bar -->
+  <div class="url-bar">
+    <div class="url-bar-inner">
+      <label class="url-label">🔗 Article URL:</label>
+      <input type="text" id="url-entry" class="input-entry url-input"
+        placeholder="Paste article URL here e.g. https://example.com/article"
+        onkeydown="if(event.key==='Enter')fetchAndGenerate()">
+      <span id="lang-badge" class="lang-badge">🌐 —</span>
+      <button class="btn btn-purple" id="fetch-btn" onclick="fetchAndGenerate()">⬇  Fetch &amp; Generate</button>
+    </div>
+  </div>
 
-      <div class="field-label">Or paste article HTML / plain text below:</div>
-      <textarea id="article-input" class="textarea tall"
+  <!-- Quick Copy pill bar -->
+  <div class="pill-bar">
+    <div class="pill-bar-inner">
+      <span class="pill-label">Quick Copy:</span>
+      <button class="btn btn-cyan btn-pill"   onclick="copySection('Focus Keyphrase')">Focus Keyphrase</button>
+      <button class="btn btn-purple btn-pill" onclick="copySection('SEO Title')">SEO Title</button>
+      <button class="btn btn-yellow btn-pill" onclick="copySection('Meta Description')">Meta Description</button>
+      <button class="btn btn-green btn-pill"  onclick="copySection('Hashtags')">#Hashtags</button>
+    </div>
+  </div>
+
+  <!-- Main body: left=input, right=output -->
+  <div class="seo-body">
+
+    <!-- LEFT: Input panel -->
+    <div class="panel" id="input-panel">
+      <div class="panel-title">Input Article</div>
+      <div class="panel-sub">Paste plain text or full WordPress HTML</div>
+      <textarea id="article-input" class="textbox fill"
         placeholder="Paste article text or full HTML code here…"></textarea>
-
-      <div class="action-row">
-        <button class="btn btn-green" onclick="processArticle()">⚡ Generate SEO</button>
-        <button class="btn btn-blue" onclick="generateAiFields()" id="ai-gen-btn">🤖 AI SEO Fields</button>
-        <button class="btn btn-red sm" onclick="clearInput()">✕ Clear</button>
-      </div>
     </div>
 
-    <!-- RIGHT PANEL: Output -->
-    <div class="panel">
-      <div class="panel-header">
-        <span>📤 SEO Output</span>
-        <button class="btn btn-teal sm" onclick="copyWpHtml()">⧉ Copy WP HTML</button>
-      </div>
+    <!-- RIGHT: Output panel -->
+    <div class="panel" id="output-panel">
+      <div class="panel-title">SEO Output</div>
+      <div class="panel-sub">Formatted article preview with Yoast SEO fields</div>
+      <div id="output-display" class="output-display fill"></div>
 
-      <!-- Yoast Fields -->
-      <div class="yoast-fields">
-        <div class="yoast-row">
-          <div class="field-label">🔑 Focus Keyphrase</div>
-          <div class="char-counter" id="fk-counter"></div>
-          <div class="input-copy-row">
-            <input type="text" id="out-keyphrase" class="input-field" oninput="updateFkCounter(this.value)">
-            <button class="btn btn-cyan sm" onclick="copyField('out-keyphrase')">⧉</button>
-          </div>
-        </div>
-        <div class="yoast-row">
-          <div class="field-label">📝 SEO Title <span class="field-hint">50–60 chars</span></div>
-          <div class="char-bar-wrap">
-            <div class="char-bar" id="seo-bar"></div>
-          </div>
-          <div class="char-counter" id="seo-counter">0 / 60</div>
-          <div class="input-copy-row">
-            <input type="text" id="out-seo-title" class="input-field" oninput="updateSeoCounter(this.value)" maxlength="120">
-            <button class="btn btn-cyan sm" onclick="copyField('out-seo-title')">⧉</button>
-          </div>
-          <div id="seo-variants" class="variants-list"></div>
-        </div>
-        <div class="yoast-row">
-          <div class="field-label">📋 Meta Description <span class="field-hint">120–160 chars</span></div>
-          <div class="char-bar-wrap">
-            <div class="char-bar" id="meta-bar"></div>
-          </div>
-          <div class="char-counter" id="meta-counter">0 / 160</div>
-          <div class="input-copy-row">
-            <textarea id="out-meta" class="textarea short" oninput="updateMetaCounter(this.value)"></textarea>
-            <button class="btn btn-cyan sm" onclick="copyField('out-meta', true)">⧉</button>
-          </div>
-          <div id="meta-variants" class="variants-list"></div>
-        </div>
-        <div class="yoast-row">
-          <div class="field-label">🔗 URL Slug</div>
-          <div class="input-copy-row">
-            <input type="text" id="out-slug" class="input-field mono">
-            <button class="btn btn-cyan sm" onclick="copyField('out-slug')">⧉</button>
-          </div>
-        </div>
+      <!-- Process Log -->
+      <div class="log-header">
+        <span class="log-label">📋  Process Log</span>
+        <button class="btn btn-red btn-xs" onclick="clearLog()">Clear Log</button>
       </div>
-
-      <!-- Google Preview -->
-      <div class="google-preview">
-        <div class="gp-label">🔍 Google Search Preview</div>
-        <div class="gp-box">
-          <div class="gp-site">🌐 &nbsp;yoursite.com &rsaquo; article</div>
-          <div class="gp-title" id="gp-title">SEO Title will appear here</div>
-          <div class="gp-meta" id="gp-meta">Meta description will appear here…</div>
-        </div>
-      </div>
-
-      <!-- WP HTML Output -->
-      <div class="field-label" style="margin-top:12px;">📄 WordPress-Ready HTML</div>
-      <textarea id="out-wp-html" class="textarea tall mono" readonly placeholder="WordPress HTML will appear here after generating…"></textarea>
-      <div class="action-row">
-        <button class="btn btn-green sm" onclick="copyWpHtml()">⧉ Copy HTML</button>
-        <button class="btn btn-red sm" onclick="clearOutput()">✕ Clear Output</button>
-      </div>
+      <div id="process-log" class="process-log"></div>
     </div>
-  </div>
 
-  <!-- Status Bar -->
-  <div class="status-bar" id="seo-status">Ready</div>
-</div>
+  </div><!-- /seo-body -->
 
-<!-- ═══════════════════════════════════════════════════════ TAB 2: IMAGE SEO -->
+</div><!-- /tab-seo -->
+
+<!-- ════════════════════════════════════════════════════════════════════════
+     TAB 2 — IMAGE SEO
+════════════════════════════════════════════════════════════════════════ -->
 <div id="tab-image" class="tab-content">
-  <div class="two-col">
 
-    <!-- LEFT: Upload + Preview -->
-    <div class="panel">
-      <div class="panel-header">🖼 Image Upload &amp; Preview</div>
-
-      <div class="drop-zone" id="drop-zone" onclick="document.getElementById('image-file-input').click()">
-        <div class="drop-icon">📁</div>
-        <div class="drop-text">Click or drag &amp; drop an image here</div>
-        <div class="drop-sub">JPG, PNG, WEBP supported</div>
-        <input type="file" id="image-file-input" accept="image/*" style="display:none" onchange="handleImageFile(this)">
-      </div>
-
-      <div id="image-preview-wrap" style="display:none;margin-top:12px;">
-        <img id="image-preview" class="img-preview" alt="Preview">
-        <div id="img-info" class="img-info"></div>
-      </div>
-
-      <div class="field-label" style="margin-top:12px;">Scene / context notes (optional)</div>
-      <input type="text" id="scene-notes" class="input-field"
-        placeholder="e.g. Cambodian politician speaking at parliament">
-
-      <div class="action-row" style="margin-top:12px;">
-        <button class="btn btn-green" id="analyze-btn" onclick="analyzeImage()">🤖 Analyze Image with AI</button>
-        <button class="btn btn-red sm" onclick="clearImageFields()">✕ Clear</button>
-      </div>
-    </div>
-
-    <!-- RIGHT: Image SEO Fields -->
-    <div class="panel">
-      <div class="panel-header">🏷 Image SEO Fields</div>
-
-      <div class="yoast-row">
-        <div class="field-label">Alt Text <span class="field-hint">8–15 words, descriptive</span></div>
-        <div class="char-counter" id="alt-counter">0 / 90</div>
-        <div class="input-copy-row">
-          <textarea id="img-alt" class="textarea short" oninput="updateAltCounter(this.value)"
-            placeholder="descriptive alt text for screen readers and SEO…"></textarea>
-          <button class="btn btn-cyan sm" onclick="copyField('img-alt', true)">⧉</button>
-        </div>
-      </div>
-
-      <div class="yoast-row">
-        <div class="field-label">Image Title <span class="field-hint">3–8 words, Title Case</span></div>
-        <div class="char-counter" id="title-counter">0 / 90</div>
-        <div class="input-copy-row">
-          <input type="text" id="img-title" class="input-field" oninput="updateTitleCounter(this.value)"
-            placeholder="Image Title Here">
-          <button class="btn btn-cyan sm" onclick="copyField('img-title')">⧉</button>
-        </div>
-      </div>
-
-      <div class="yoast-row">
-        <div class="field-label">Caption <span class="field-hint">1–2 sentences</span></div>
-        <div class="char-counter" id="caption-counter">0 / 180</div>
-        <div class="input-copy-row">
-          <textarea id="img-caption" class="textarea medium" oninput="updateCaptionCounter(this.value)"
-            placeholder="Factual caption describing the image content."></textarea>
-          <button class="btn btn-cyan sm" onclick="copyField('img-caption', true)">⧉</button>
-        </div>
-      </div>
-
-      <div class="action-row" style="margin-top:16px;">
-        <button class="btn btn-teal" onclick="copyAllImageFields()">⧉ Copy All Fields</button>
-      </div>
-
-      <!-- Copy All Output Box -->
-      <div class="field-label" style="margin-top:16px;">📋 All Fields (formatted)</div>
-      <textarea id="img-all-output" class="textarea tall mono" readonly
-        placeholder="All image SEO fields will appear here after AI analysis…"></textarea>
+  <!-- Top action bar -->
+  <div class="action-bar">
+    <div class="action-bar-inner">
+      <button class="btn btn-purple" onclick="triggerUpload()">⬆  Upload Image</button>
+      <button class="btn btn-green" id="gen-seo-btn" onclick="generateImageSeo()">⚡ Generate SEO</button>
+      <button class="btn btn-teal"  onclick="copyAllImageSeo()">⧉  Copy All SEO</button>
+      <button class="btn btn-red"   onclick="clearImageFields()">✕  Clear</button>
+      <input type="file" id="img-file-input" accept=".png,.jpg,.jpeg,.webp,.bmp" style="display:none" onchange="onFileSelected(this)">
     </div>
   </div>
 
-  <div class="status-bar" id="img-status">Ready</div>
+  <!-- Image body -->
+  <div class="image-body">
+
+    <!-- LEFT: Crop panel (70%) -->
+    <div class="panel img-crop-panel">
+
+      <!-- Preset buttons + controls -->
+      <div class="crop-toolbar">
+        <button class="btn btn-blue btn-sm" onclick="setPreset(1200,366)">1200×366</button>
+        <button class="btn btn-blue btn-sm" onclick="setPreset(800,445)">800×445</button>
+        <button class="btn btn-blue btn-sm" onclick="setPreset(1,1)">1:1</button>
+        <button class="btn btn-blue btn-sm" onclick="setPreset(16,9)">16:9</button>
+        <button class="btn btn-blue btn-sm" onclick="setPreset(4,3)">4:3</button>
+        <label class="switch-wrap">
+          <input type="checkbox" id="lock-ratio" checked onchange="redraw()">
+          <span class="switch-label">Lock Ratio</span>
+        </label>
+        <label class="switch-wrap">
+          <input type="checkbox" id="safe-zone" checked onchange="redraw()">
+          <span class="switch-label">Safe Zone</span>
+        </label>
+        <span class="zoom-label">Zoom</span>
+        <input type="range" id="zoom-slider" class="zoom-slider" min="50" max="300" value="100" oninput="onZoom(this.value)">
+      </div>
+
+      <!-- Canvas area -->
+      <div class="canvas-wrap" id="canvas-wrap">
+        <canvas id="crop-canvas" class="crop-canvas"
+          onmousedown="canvasPress(event)"
+          onmousemove="canvasDrag(event)"
+          onmouseup="canvasRelease(event)"
+          onwheel="canvasWheel(event)"
+          ondragover="event.preventDefault()"
+          ondrop="onCanvasDrop(event)">
+        </canvas>
+        <!-- Drop hint when empty -->
+        <div id="canvas-hint" class="canvas-hint">
+          <div class="hint-icon">🖼</div>
+          <div class="hint-text">Click <strong>⬆ Upload Image</strong> or drag &amp; drop here</div>
+          <div class="hint-sub">PNG · JPG · WEBP · BMP</div>
+        </div>
+      </div>
+
+      <!-- Crop bottom controls -->
+      <div class="crop-bottom">
+        <button class="btn btn-green btn-sm" onclick="applyCrop()">✔ Apply Crop</button>
+        <button class="btn btn-yellow btn-sm" onclick="exportUnder100kb()">💾 Export &lt;100KB</button>
+        <button class="btn btn-red btn-sm" onclick="clearCrop()">✕ Clear Crop</button>
+        <span id="crop-info" class="crop-info">No image loaded</span>
+      </div>
+    </div>
+
+    <!-- RIGHT: SEO fields panel (30%) -->
+    <div class="panel img-seo-panel">
+
+      <div class="seo-field-label">KEYWORD / SCENE NOTES</div>
+      <input type="text" id="scene-entry" class="input-entry"
+        placeholder="car review / homepage banner…">
+
+      <!-- Copy buttons grid -->
+      <div class="copy-grid">
+        <button class="btn btn-blue btn-sm" onclick="copyImgField('alt')">⧉ Alt Text</button>
+        <button class="btn btn-blue btn-sm" onclick="copyImgField('title')">⧉ Img Title</button>
+        <button class="btn btn-blue btn-sm" onclick="copyImgField('caption')">⧉ Caption</button>
+        <button class="btn btn-teal btn-sm" onclick="copyAllImageSeo()">⧉ Copy All</button>
+      </div>
+
+      <div class="seo-field-label">ALT TEXT</div>
+      <textarea id="img-alt" class="textbox img-alt-box" placeholder="alt text will appear here…"></textarea>
+
+      <div class="seo-field-label">IMAGE TITLE</div>
+      <input type="text" id="img-title-field" class="input-entry" placeholder="Image Title">
+
+      <div class="seo-field-label">CAPTION</div>
+      <textarea id="img-caption" class="textbox fill img-caption-box" placeholder="Caption will appear here…"></textarea>
+
+    </div><!-- /img-seo-panel -->
+  </div><!-- /image-body -->
+
+</div><!-- /tab-image -->
+
+<!-- ═════════════════════ STATUS BAR (bottom) ═════════════════════════════ -->
+<div class="status-bar">
+  <span id="status-text">  Ready</span>
 </div>
 
-<!-- ═══════════════════════════════════════ API SETTINGS MODAL -->
+<!-- ════════════════════════════════════════════════════════════════════════
+     API SETTINGS MODAL
+════════════════════════════════════════════════════════════════════════ -->
 <div id="api-modal" class="modal-overlay" style="display:none">
   <div class="modal">
-    <div class="modal-header">
-      <span>⚙ Together AI — API Settings</span>
-      <button class="modal-close" onclick="closeApiModal()">✕</button>
+    <div class="modal-hdr">
+      <span class="modal-title">Together AI — API Settings</span>
     </div>
     <div class="modal-body">
-      <div class="field-label">Together AI API Key</div>
-      <div class="field-hint" style="margin-bottom:8px;">
-        Get your key at <a href="https://api.together.xyz" target="_blank" class="link">api.together.xyz</a>
+      <div class="modal-section-title">Together AI API Key</div>
+      <div class="modal-hint">Key is hidden, tested before use, and stored in your browser.</div>
+
+      <div class="key-row">
+        <input type="password" id="api-key-input" class="input-entry mono-input"
+          placeholder="Paste key here…" autocomplete="off">
+        <button class="btn btn-blue btn-sm" onclick="toggleKeyVis()">👁</button>
       </div>
-      <div class="input-copy-row">
-        <input type="password" id="api-key-input" class="input-field mono"
-          placeholder="Paste your Together AI API key here…">
-        <button class="btn btn-cyan sm" onclick="toggleApiKeyVisibility()">👁</button>
+
+      <div class="modal-checkbox-row">
+        <label><input type="checkbox" id="show-key-cb" onchange="toggleKeyVis()"> Show key</label>
       </div>
-      <div id="api-modal-status" class="modal-status"></div>
+
+      <div id="api-status" class="api-status"></div>
     </div>
     <div class="modal-footer">
-      <button class="btn btn-cyan" onclick="testApiKey()">🔍 Test Key</button>
-      <button class="btn btn-green" onclick="saveApiKey()">✔ Save &amp; Use</button>
-      <button class="btn btn-red" onclick="clearApiKey()">✕ Clear</button>
-      <button class="btn btn-blue" onclick="closeApiModal()">Cancel</button>
+      <button class="btn btn-cyan"   onclick="testKey()">Test Key</button>
+      <button class="btn btn-green"  onclick="saveKey()">Save &amp; Use</button>
+      <button class="btn btn-blue"   onclick="sessionKey()">Session Only</button>
+      <button class="btn btn-red"    onclick="clearKey()">Clear Saved Key</button>
+      <button class="btn btn-gray"   onclick="closeApiModal()">Cancel</button>
     </div>
   </div>
 </div>
 
-<!-- Loading Overlay -->
-<div id="loading-overlay" class="loading-overlay" style="display:none">
-  <div class="loading-box">
+<!-- ════════════════════════════════════════════════════════════════════════
+     AI SEO FIELDS POPUP (matches AISEOFieldsPopup)
+════════════════════════════════════════════════════════════════════════ -->
+<div id="ai-seo-modal" class="modal-overlay" style="display:none">
+  <div class="modal modal-wide">
+    <div class="modal-hdr ai-hdr">
+      <span class="modal-title">⚡  AI Generate — Focus Keyphrase · SEO Title · Meta Description</span>
+      <span id="ai-lang-badge" class="lang-badge" style="margin-left:auto">🌐 English</span>
+    </div>
+    <div class="modal-body" style="overflow-y:auto;max-height:72vh">
+
+      <!-- Focus Keyphrase -->
+      <div class="ai-section-title">🔑  Focus Keyphrase</div>
+      <div class="ai-section-hint">Short, specific phrase (2–4 words).</div>
+      <div class="ai-field-row">
+        <input type="text" id="ai-fk" class="input-entry ai-green-text" placeholder="e.g. cambodia election results"
+          oninput="updateFkCounter(this.value)">
+        <button class="btn btn-cyan btn-sm" onclick="copyAiField('ai-fk')">⧉ Copy</button>
+      </div>
+      <div id="ai-fk-counter" class="ai-counter"></div>
+
+      <!-- SEO Title -->
+      <div class="ai-section-title" style="margin-top:14px">📝  SEO Title</div>
+      <div class="ai-section-hint">Recommended: 50–60 characters.</div>
+      <div class="ai-field-row">
+        <input type="text" id="ai-seo-title" class="input-entry" placeholder="SEO Title will appear here…"
+          oninput="updateSeoCounter(this.value)">
+        <button class="btn btn-cyan btn-sm" onclick="copyAiField('ai-seo-title')">⧉ Copy</button>
+      </div>
+      <div class="ai-counter-row">
+        <span id="ai-seo-count" class="ai-counter">0 / 60</span>
+        <span id="ai-seo-hint" class="ai-hint">✓ Good length</span>
+      </div>
+      <div class="char-bar-bg"><div class="char-bar" id="ai-seo-bar"></div></div>
+
+      <div class="ai-variants-label">   Variants (click to use)</div>
+      <div id="ai-seo-variants" class="ai-variants"></div>
+
+      <!-- Meta Description -->
+      <div class="ai-section-title" style="margin-top:14px">📋  Meta Description</div>
+      <div class="ai-section-hint">Recommended: 120–160 characters.</div>
+      <textarea id="ai-meta" class="textbox ai-meta-box" placeholder="Meta description will appear here…"
+        oninput="updateMetaCounter(this.value)"></textarea>
+      <div class="ai-counter-row">
+        <span id="ai-meta-count" class="ai-counter">0 / 160</span>
+        <span id="ai-meta-hint" class="ai-hint">✓ Good length</span>
+      </div>
+      <div class="char-bar-bg"><div class="char-bar" id="ai-meta-bar"></div></div>
+      <button class="btn btn-cyan btn-sm" style="margin-top:6px" onclick="copyAiField('ai-meta',true)">⧉  Copy Meta</button>
+
+      <div class="ai-variants-label">   Variants (click to use)</div>
+      <div id="ai-meta-variants" class="ai-variants"></div>
+
+      <!-- Google Search Preview -->
+      <div class="ai-section-title" style="margin-top:14px">🔍  Google Search Preview</div>
+      <div class="gp-box">
+        <div class="gp-site">🌐 &nbsp;yoursite.com &rsaquo; article</div>
+        <div class="gp-title" id="gp-title">SEO Title will appear here</div>
+        <div class="gp-meta"  id="gp-meta">Meta description will appear here…</div>
+      </div>
+
+      <div id="ai-popup-status" class="ai-popup-status">⏳ Generating SEO fields with AI…</div>
+    </div>
+
+    <div class="modal-footer">
+      <button class="btn btn-purple" id="regen-btn" onclick="regenAiFields()">⟳  Regenerate</button>
+      <button class="btn btn-green"  onclick="applyAiFields()">✔  Apply to Editor</button>
+      <button class="btn btn-red"    onclick="closeAiModal()">✕  Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- Spinner overlay -->
+<div id="spinner" class="spinner-overlay" style="display:none">
+  <div class="spinner-box">
     <div class="spinner"></div>
-    <div id="loading-text" class="loading-text">Processing…</div>
+    <div id="spinner-text" class="spinner-text">Processing…</div>
   </div>
 </div>
 
