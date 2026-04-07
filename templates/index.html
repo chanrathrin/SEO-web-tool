@@ -7,164 +7,183 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
-  <div class="topbar">
-    <div class="topbar-left">
-      <div class="brand">WordPress SEO Studio</div>
-      <div class="toolline">SEO Formatter · Image Crop · AI Image SEO · Yoast Fields · AI SEO Fields</div>
-    </div>
-    <div class="topbar-right">
-      <button id="openApiSettingsBtn" class="btn cyan small">⚙ API Settings</button>
-      <div id="apiBadge" class="api-badge badge-empty">○ API not configured</div>
-    </div>
-  </div>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand-wrap">
+        <div class="brand">WordPress SEO Studio</div>
+        <div class="tagline">SEO Formatter · Image Crop · AI Image SEO · Yoast Fields · AI SEO Fields</div>
+      </div>
+      <div class="topbar-actions">
+        <span id="apiBadge" class="api-badge off">○ API not configured</span>
+        <button id="openApiSettingsBtn" class="btn cyan" type="button">⚙ API Settings</button>
+      </div>
+    </header>
 
-  <div class="main-shell">
-    <div class="tabs-header">
-      <button id="seoTabBtn" class="tab-btn active">📝 SEO Formatter</button>
-      <button id="imageTabBtn" class="tab-btn">🖼 Image SEO</button>
-    </div>
+    <section class="tabs-shell">
+      <div class="tabs-header">
+        <button type="button" class="tab-btn active" data-tab="seoTab">📝 SEO Formatter</button>
+        <button type="button" class="tab-btn" data-tab="imageTab">🖼 Image SEO</button>
+      </div>
 
-    <section id="seoTab" class="tab-panel active">
-      <div class="grid seo-grid">
-        <div class="card">
-          <div class="card-title">Article Input</div>
+      <div id="seoTab" class="tab-panel active">
+        <div class="grid two-cols">
+          <section class="panel">
+            <div class="panel-title">Article Input</div>
 
-          <label class="label" for="articleInput">WordPress HTML / Gutenberg / Plain Article</label>
-          <textarea id="articleInput" class="textarea textarea-xl" placeholder="Paste WordPress HTML, Gutenberg blocks, or plain article text here..."></textarea>
+            <label class="field-label" for="articleInput">Paste Article / WordPress HTML</label>
+            <textarea id="articleInput" class="input-text area-xl" placeholder="Paste WordPress HTML, Gutenberg blocks, article text, or article content with video embeds here..."></textarea>
 
-          <div class="toolbar">
-            <button id="generateSeoBtn" class="btn green">⚡ Generate SEO</button>
-            <button id="clearSeoBtn" class="btn red">Clear</button>
-            <button id="copyInputBtn" class="btn blue">Copy Input</button>
-          </div>
+            <div class="tool-row wrap">
+              <button id="generateSeoBtn" class="btn green" type="button">⚡ Generate SEO</button>
+              <button id="clearSeoBtn" class="btn red" type="button">✕ Clear</button>
+              <button id="copyInputBtn" class="btn blue" type="button">⧉ Copy Input</button>
+            </div>
+          </section>
 
-          <div class="card-title with-space">Detected Structure</div>
-          <textarea id="structureInfo" class="textarea textarea-sm" readonly></textarea>
+          <section class="panel">
+            <div class="panel-title">Generated Yoast SEO Fields</div>
 
-          <div class="card-title with-space">Detected Embeds / Videos</div>
-          <textarea id="detectedEmbeds" class="textarea textarea-sm" readonly></textarea>
+            <label class="field-label" for="focusKeyphrase">Focus Keyphrase</label>
+            <div class="copy-row">
+              <input id="focusKeyphrase" class="input-text" type="text" readonly>
+              <button class="btn cyan small" type="button" data-copy-target="focusKeyphrase">Copy</button>
+            </div>
+
+            <label class="field-label" for="seoTitle">SEO Title</label>
+            <div class="copy-row">
+              <input id="seoTitle" class="input-text" type="text" readonly>
+              <button class="btn cyan small" type="button" data-copy-target="seoTitle">Copy</button>
+            </div>
+            <div id="seoTitleCounter" class="counter">0 / 60</div>
+
+            <label class="field-label" for="metaDescription">Meta Description</label>
+            <div class="copy-row align-start">
+              <textarea id="metaDescription" class="input-text area-sm" readonly></textarea>
+              <button class="btn cyan small" type="button" data-copy-target="metaDescription">Copy</button>
+            </div>
+            <div id="metaCounter" class="counter">0 / 160</div>
+
+            <div class="tool-row wrap margin-top">
+              <button id="copyAllSeoBtn" class="btn teal" type="button">⧉ Copy All SEO Fields</button>
+            </div>
+          </section>
         </div>
 
-        <div class="card">
-          <div class="card-title">Yoast SEO Fields</div>
+        <div class="grid two-cols lower-grid">
+          <section class="panel">
+            <div class="panel-title">SEO Output HTML</div>
+            <div class="tool-row wrap">
+              <button id="copySeoOutputBtn" class="btn green" type="button">⧉ Copy SEO Output</button>
+            </div>
+            <textarea id="seoOutput" class="input-text area-xxl" readonly></textarea>
+          </section>
 
-          <label class="label" for="focusKeyphrase">Focus Keyphrase</label>
-          <div class="copy-line">
-            <input id="focusKeyphrase" type="text" readonly>
-            <button class="btn cyan mini" data-copy-target="focusKeyphrase">Copy</button>
-          </div>
+          <section class="stack">
+            <section class="panel slim">
+              <div class="panel-title">Detected Embeds / Videos</div>
+              <textarea id="detectedEmbeds" class="input-text area-md" readonly></textarea>
+            </section>
 
-          <label class="label with-space" for="seoTitle">SEO Title</label>
-          <div class="copy-line">
-            <input id="seoTitle" type="text" readonly>
-            <button class="btn cyan mini" data-copy-target="seoTitle">Copy</button>
-          </div>
-          <div id="seoTitleCounter" class="counter">0 / 60</div>
+            <section class="panel slim">
+              <div class="panel-title">Google Preview</div>
+              <div class="google-preview">
+                <div class="preview-url">example.com › article</div>
+                <div id="previewTitle" class="preview-title">SEO Title will appear here</div>
+                <div id="previewMeta" class="preview-meta">Meta description will appear here.</div>
+              </div>
+            </section>
 
-          <label class="label with-space" for="metaDescription">Meta Description</label>
-          <div class="copy-area">
-            <textarea id="metaDescription" class="textarea textarea-md" readonly></textarea>
-            <button class="btn cyan mini top" data-copy-target="metaDescription">Copy</button>
-          </div>
-          <div id="metaCounter" class="counter">0 / 160</div>
-
-          <div class="google-preview">
-            <div class="preview-url">example.com › article</div>
-            <div id="previewTitle" class="preview-title">SEO Title will appear here</div>
-            <div id="previewMeta" class="preview-meta">Meta description will appear here.</div>
-          </div>
+            <section class="panel slim">
+              <div class="panel-title">Detected Structure</div>
+              <textarea id="structureInfo" class="input-text area-sm" readonly></textarea>
+            </section>
+          </section>
         </div>
       </div>
 
-      <div class="card mt16">
-        <div class="card-title">SEO Output HTML</div>
-        <div class="toolbar">
-          <button id="copySeoOutputBtn" class="btn green">Copy SEO Output</button>
+      <div id="imageTab" class="tab-panel">
+        <div class="grid two-cols">
+          <section class="panel">
+            <div class="panel-title">Image Upload / Preview</div>
+
+            <label class="field-label" for="imageInput">Upload Image</label>
+            <input id="imageInput" class="input-file" type="file" accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp">
+
+            <label class="field-label" for="sceneNotes">Context / Keyword Hint</label>
+            <input id="sceneNotes" class="input-text" type="text" placeholder="Optional context, subject, article topic, keyword...">
+
+            <div class="tool-row wrap">
+              <button id="generateImageSeoBtn" class="btn green" type="button">⚡ Generate SEO</button>
+              <button id="clearImageBtn" class="btn red" type="button">✕ Clear</button>
+            </div>
+
+            <div class="image-preview-wrap">
+              <img id="imagePreview" class="image-preview hidden" alt="Preview">
+              <div id="imagePlaceholder" class="image-placeholder">Upload an image to preview it here</div>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-title">Image SEO Fields</div>
+
+            <label class="field-label" for="altText">Alt Text</label>
+            <div class="copy-row align-start">
+              <textarea id="altText" class="input-text area-sm" readonly></textarea>
+              <button class="btn cyan small" type="button" data-copy-target="altText">Copy</button>
+            </div>
+
+            <label class="field-label" for="imgTitle">Image Title</label>
+            <div class="copy-row">
+              <input id="imgTitle" class="input-text" type="text" readonly>
+              <button class="btn cyan small" type="button" data-copy-target="imgTitle">Copy</button>
+            </div>
+
+            <label class="field-label" for="caption">Caption</label>
+            <div class="copy-row align-start">
+              <textarea id="caption" class="input-text area-sm" readonly></textarea>
+              <button class="btn cyan small" type="button" data-copy-target="caption">Copy</button>
+            </div>
+
+            <div class="tool-row wrap margin-top">
+              <button id="copyAllImageBtn" class="btn teal" type="button">⧉ Copy All Image Fields</button>
+            </div>
+          </section>
         </div>
-        <textarea id="seoOutput" class="textarea textarea-xxl" readonly></textarea>
       </div>
     </section>
 
-    <section id="imageTab" class="tab-panel">
-      <div class="grid image-grid">
-        <div class="card">
-          <div class="card-title">Image Upload & Crop</div>
-
-          <div class="toolbar">
-            <input id="imageFileInput" type="file" accept="image/*" class="file-input">
-            <button id="clearImageBtn" class="btn red">Clear Image</button>
-          </div>
-
-          <div class="canvas-wrap">
-            <canvas id="imageCanvas" width="720" height="420"></canvas>
-          </div>
-
-          <div class="crop-hint">
-            Drag on the canvas to create crop area. Then click Apply Crop.
-          </div>
-
-          <div class="toolbar">
-            <button id="resetCropBtn" class="btn yellow">Reset Crop Box</button>
-            <button id="applyCropBtn" class="btn blue">Apply Crop</button>
-          </div>
-
-          <div id="cropInfo" class="statusline">No image loaded</div>
-        </div>
-
-        <div class="card">
-          <div class="card-title">AI Image SEO</div>
-
-          <label class="label" for="sceneNotes">Scene / Keyword Hint</label>
-          <input id="sceneNotes" type="text" placeholder="e.g. breaking news, truck crash site, luxury car exterior">
-
-          <div class="toolbar">
-            <button id="generateImageSeoBtn" class="btn green">⚡ Generate Image SEO</button>
-            <button id="copyImageSeoBtn" class="btn blue">Copy Fields</button>
-          </div>
-
-          <label class="label with-space" for="altText">Alt Text</label>
-          <textarea id="altText" class="textarea textarea-sm" readonly></textarea>
-
-          <label class="label with-space" for="imgTitle">Image Title</label>
-          <input id="imgTitle" type="text" readonly>
-
-          <label class="label with-space" for="caption">Caption</label>
-          <textarea id="caption" class="textarea textarea-sm" readonly></textarea>
-
-          <div class="card-title with-space">Preview</div>
-          <div class="image-preview-box">
-            <img id="croppedPreview" alt="Cropped Preview">
-          </div>
-        </div>
-      </div>
-    </section>
+    <footer class="statusbar">
+      <span id="statusLabel">Ready.</span>
+    </footer>
   </div>
 
-  <div id="apiModal" class="modal hidden">
+  <div id="apiModal" class="modal hidden" aria-hidden="true">
     <div class="modal-card">
-      <div class="modal-head">
+      <div class="modal-header">
         <div>
           <div class="modal-title">Together AI — API Settings</div>
-          <div class="modal-subtitle">Key is stored only in this browser session. Use it for AI SEO and Image SEO.</div>
+          <div class="modal-subtitle">Key is hidden, tested before use, and stored in your browser session.</div>
         </div>
-        <button id="closeApiSettingsBtn" class="btn red mini">✕</button>
+        <button id="closeApiSettingsBtn" class="btn red small" type="button">Close</button>
       </div>
 
-      <label class="label" for="apiKeyInput">API Key</label>
-      <input id="apiKeyInput" type="password" placeholder="Paste Together API key here">
+      <label class="field-label" for="apiKeyInput">Together API Key</label>
+      <input id="apiKeyInput" class="input-text" type="password" placeholder="Paste Together API key here...">
 
-      <div class="toolbar">
-        <button id="toggleApiVisibilityBtn" class="btn yellow">Show / Hide</button>
-        <button id="testApiKeyBtn" class="btn cyan">Test Key</button>
-        <button id="saveApiKeyBtn" class="btn green">Save & Use</button>
-        <button id="clearApiKeyBtn" class="btn red">Clear</button>
+      <label class="checkbox-row">
+        <input id="showApiKeyCheckbox" type="checkbox">
+        <span>Show key</span>
+      </label>
+
+      <div class="tool-row wrap margin-top">
+        <button id="testApiKeyBtn" class="btn cyan" type="button">Test Key</button>
+        <button id="saveApiKeyBtn" class="btn green" type="button">Save & Use</button>
+        <button id="clearApiKeyBtn" class="btn red" type="button">Clear Saved Key</button>
       </div>
 
-      <div id="apiModalStatus" class="modal-status">Paste your Together API key.</div>
+      <div id="apiModalStatus" class="modal-status">Paste your API key below.</div>
     </div>
   </div>
-
-  <div id="bottomStatus" class="bottom-status">Ready</div>
 
   <script src="{{ url_for('static', filename='script.js') }}"></script>
 </body>
