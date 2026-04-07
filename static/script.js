@@ -1,37 +1,27 @@
-const state = {
-  apiKey: sessionStorage.getItem("together_api_key") || "",
-  activeTab: "seo",
-  imageOriginal: null,
-  imageCurrent: null,
-  imageObj: null,
-  cropRect: null,
-  isDragging: false,
-  dragStart: null,
-  canvasScaleX: 1,
-  canvasScaleY: 1,
-};
+const STORAGE_KEY = "wp_seo_studio_api_key";
 
-const seoTabBtn = document.getElementById("seoTabBtn");
-const imageTabBtn = document.getElementById("imageTabBtn");
-const seoTab = document.getElementById("seoTab");
-const imageTab = document.getElementById("imageTab");
+const statusLabel = document.getElementById("statusLabel");
+const apiBadge = document.getElementById("apiBadge");
+
+const tabButtons = document.querySelectorAll(".tab-btn");
+const tabPanels = document.querySelectorAll(".tab-panel");
 
 const openApiSettingsBtn = document.getElementById("openApiSettingsBtn");
 const closeApiSettingsBtn = document.getElementById("closeApiSettingsBtn");
 const apiModal = document.getElementById("apiModal");
 const apiKeyInput = document.getElementById("apiKeyInput");
-const toggleApiVisibilityBtn = document.getElementById("toggleApiVisibilityBtn");
 const testApiKeyBtn = document.getElementById("testApiKeyBtn");
 const saveApiKeyBtn = document.getElementById("saveApiKeyBtn");
 const clearApiKeyBtn = document.getElementById("clearApiKeyBtn");
+const showApiKeyCheckbox = document.getElementById("showApiKeyCheckbox");
 const apiModalStatus = document.getElementById("apiModalStatus");
-const apiBadge = document.getElementById("apiBadge");
-const bottomStatus = document.getElementById("bottomStatus");
 
 const articleInput = document.getElementById("articleInput");
 const generateSeoBtn = document.getElementById("generateSeoBtn");
 const clearSeoBtn = document.getElementById("clearSeoBtn");
 const copyInputBtn = document.getElementById("copyInputBtn");
+const copyAllSeoBtn = document.getElementById("copyAllSeoBtn");
+const copySeoOutputBtn = document.getElementById("copySeoOutputBtn");
 
 const focusKeyphrase = document.getElementById("focusKeyphrase");
 const seoTitle = document.getElementById("seoTitle");
@@ -39,162 +29,164 @@ const metaDescription = document.getElementById("metaDescription");
 const detectedEmbeds = document.getElementById("detectedEmbeds");
 const seoOutput = document.getElementById("seoOutput");
 const structureInfo = document.getElementById("structureInfo");
-const copySeoOutputBtn = document.getElementById("copySeoOutputBtn");
-
 const previewTitle = document.getElementById("previewTitle");
 const previewMeta = document.getElementById("previewMeta");
 const seoTitleCounter = document.getElementById("seoTitleCounter");
 const metaCounter = document.getElementById("metaCounter");
 
-const imageFileInput = document.getElementById("imageFileInput");
-const clearImageBtn = document.getElementById("clearImageBtn");
-const resetCropBtn = document.getElementById("resetCropBtn");
-const applyCropBtn = document.getElementById("applyCropBtn");
-const cropInfo = document.getElementById("cropInfo");
-const imageCanvas = document.getElementById("imageCanvas");
-const imageCtx = imageCanvas.getContext("2d");
-const croppedPreview = document.getElementById("croppedPreview");
+const imageInput = document.getElementById("imageInput");
 const sceneNotes = document.getElementById("sceneNotes");
 const generateImageSeoBtn = document.getElementById("generateImageSeoBtn");
-const copyImageSeoBtn = document.getElementById("copyImageSeoBtn");
+const clearImageBtn = document.getElementById("clearImageBtn");
+const imagePreview = document.getElementById("imagePreview");
+const imagePlaceholder = document.getElementById("imagePlaceholder");
 const altText = document.getElementById("altText");
 const imgTitle = document.getElementById("imgTitle");
 const caption = document.getElementById("caption");
+const copyAllImageBtn = document.getElementById("copyAllImageBtn");
 
-function setBottomStatus(text) {
-  bottomStatus.textContent = `  ${text}`;
+function currentApiKey() {
+  return localStorage.getItem(STORAGE_KEY) || "";
 }
 
-function setModalStatus(text) {
-  apiModalStatus.textContent = text;
+function setStatus(message) {
+  statusLabel.textContent = message;
 }
 
-function updateApiBadge() {
-  apiBadge.classList.remove("badge-empty", "badge-session", "badge-saved");
-  if (state.apiKey) {
-    apiBadge.textContent = "● Session key active";
-    apiBadge.classList.add("badge-session");
+function setApiBadge() {
+  const key = currentApiKey();
+  apiBadge.classList.remove("off", "saved");
+  if (key) {
+    apiBadge.textContent = "● API key saved";
+    apiBadge.classList.add("saved");
   } else {
     apiBadge.textContent = "○ API not configured";
-    apiBadge.classList.add("badge-empty");
+    apiBadge.classList.add("off");
   }
 }
 
 function openApiModal() {
-  apiKeyInput.value = state.apiKey || "";
+  apiKeyInput.value = currentApiKey();
   apiModal.classList.remove("hidden");
+  apiModal.setAttribute("aria-hidden", "false");
 }
 
 function closeApiModal() {
   apiModal.classList.add("hidden");
+  apiModal.setAttribute("aria-hidden", "true");
 }
 
-function switchTab(tab) {
-  state.activeTab = tab;
-  seoTabBtn.classList.toggle("active", tab === "seo");
-  imageTabBtn.classList.toggle("active", tab === "image");
-  seoTab.classList.toggle("active", tab === "seo");
-  imageTab.classList.toggle("active", tab === "image");
-}
-
-function setCounter(el, value, goodMin, max) {
-  el.textContent = `${value} / ${max}`;
-  el.classList.remove("good", "warn", "bad");
-  if (value === 0) return;
-  if (value > max) el.classList.add("bad");
-  else if (value >= goodMin) el.classList.add("good");
-  else el.classList.add("warn");
+function switchTab(tabId) {
+  tabButtons.forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.tab === tabId);
+  });
+  tabPanels.forEach((panel) => {
+    panel.classList.toggle("active", panel.id === tabId);
+  });
 }
 
 function updatePreview() {
   const title = (seoTitle.value || "").trim();
   const meta = (metaDescription.value || "").trim();
+
   previewTitle.textContent = title || "SEO Title will appear here";
   previewMeta.textContent = meta || "Meta description will appear here.";
-  setCounter(seoTitleCounter, title.length, 50, 60);
-  setCounter(metaCounter, meta.length, 120, 160);
+
+  seoTitleCounter.textContent = `${title.length} / 60`;
+  metaCounter.textContent = `${meta.length} / 160`;
+
+  seoTitleCounter.className = "counter";
+  metaCounter.className = "counter";
+
+  if (title.length > 60) seoTitleCounter.classList.add("bad");
+  else if (title.length >= 50) seoTitleCounter.classList.add("good");
+  else if (title.length > 0) seoTitleCounter.classList.add("warn");
+
+  if (meta.length > 160) metaCounter.classList.add("bad");
+  else if (meta.length >= 120) metaCounter.classList.add("good");
+  else if (meta.length > 0) metaCounter.classList.add("warn");
 }
 
-async function copyText(text, okMessage = "Copied.") {
-  if (!text || !String(text).trim()) {
-    setBottomStatus("Nothing to copy");
+async function copyText(value, successLabel) {
+  if (!value || !value.trim()) {
+    setStatus("Nothing to copy.");
     return;
   }
   try {
-    await navigator.clipboard.writeText(String(text));
-    setBottomStatus(okMessage);
-  } catch {
-    setBottomStatus("Copy failed");
+    await navigator.clipboard.writeText(value);
+    setStatus(successLabel || "Copied.");
+  } catch (err) {
+    setStatus("Copy failed.");
   }
-}
-
-async function postJSON(url, payload) {
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload || {}),
-  });
-  const data = await res.json();
-  if (!res.ok || !data.ok) {
-    throw new Error(data.error || data.message || "Request failed");
-  }
-  return data;
 }
 
 async function testApiKey() {
-  const key = apiKeyInput.value.trim();
-  if (!key) {
-    setModalStatus("Paste your API key first.");
+  const apiKey = apiKeyInput.value.trim();
+  if (!apiKey) {
+    apiModalStatus.textContent = "API key is empty.";
     return;
   }
-  setModalStatus("Testing...");
+
+  apiModalStatus.textContent = "Testing API key...";
   try {
-    const data = await postJSON("/api/verify-key", { api_key: key });
-    setModalStatus(data.message || "API key is valid.");
-  } catch (e) {
-    setModalStatus(e.message || "API test failed.");
+    const res = await fetch("/api/verify-key", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ api_key: apiKey })
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) {
+      throw new Error(data.error || "API key test failed.");
+    }
+    apiModalStatus.textContent = "✓ API key is valid.";
+  } catch (err) {
+    apiModalStatus.textContent = `✗ ${err.message || "API key test failed."}`;
   }
 }
 
 function saveApiKey() {
-  const key = apiKeyInput.value.trim();
-  state.apiKey = key;
-  if (key) {
-    sessionStorage.setItem("together_api_key", key);
-    setBottomStatus("API key loaded");
-    setModalStatus("Session key active.");
-  } else {
-    sessionStorage.removeItem("together_api_key");
-    setModalStatus("API key cleared.");
-    setBottomStatus("API key cleared");
+  const apiKey = apiKeyInput.value.trim();
+  if (!apiKey) {
+    apiModalStatus.textContent = "API key is empty.";
+    return;
   }
-  updateApiBadge();
-  closeApiModal();
+  localStorage.setItem(STORAGE_KEY, apiKey);
+  setApiBadge();
+  apiModalStatus.textContent = "✓ API key saved and active.";
+  setStatus("API key loaded");
 }
 
 function clearApiKey() {
-  state.apiKey = "";
+  localStorage.removeItem(STORAGE_KEY);
   apiKeyInput.value = "";
-  sessionStorage.removeItem("together_api_key");
-  updateApiBadge();
-  setModalStatus("API key cleared.");
-  setBottomStatus("API key cleared");
+  setApiBadge();
+  apiModalStatus.textContent = "Saved key cleared.";
+  setStatus("API key cleared");
 }
 
 async function generateSeo() {
   const article = articleInput.value.trim();
   if (!article) {
-    setBottomStatus("Paste article input first");
+    setStatus("Paste article input first");
     return;
   }
 
   generateSeoBtn.disabled = true;
-  setBottomStatus("Generating SEO...");
+  setStatus("Generating SEO...");
+
   try {
-    const data = await postJSON("/api/generate-seo", {
-      api_key: state.apiKey,
-      article,
+    const res = await fetch("/api/generate-seo", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        article,
+        api_key: currentApiKey()
+      })
     });
+    const data = await res.json();
+    if (!res.ok || !data.ok) {
+      throw new Error(data.error || "Failed to generate SEO.");
+    }
 
     focusKeyphrase.value = data.focus_keyphrase || "";
     seoTitle.value = data.seo_title || "";
@@ -203,9 +195,9 @@ async function generateSeo() {
     seoOutput.value = data.seo_output || "";
     structureInfo.value = data.structure || "";
     updatePreview();
-    setBottomStatus("SEO generated");
-  } catch (e) {
-    setBottomStatus(e.message || "SEO generation failed");
+    setStatus("SEO generated successfully");
+  } catch (err) {
+    setStatus(err.message || "Failed to generate SEO.");
   } finally {
     generateSeoBtn.disabled = false;
   }
@@ -220,207 +212,132 @@ function clearSeo() {
   seoOutput.value = "";
   structureInfo.value = "";
   updatePreview();
-  setBottomStatus("SEO fields cleared");
+  setStatus("SEO fields cleared");
 }
 
-function imageToDataURL(file) {
-  return new Promise((resolve, reject) => {
-    const r = new FileReader();
-    r.onload = () => resolve(r.result);
-    r.onerror = reject;
-    r.readAsDataURL(file);
-  });
-}
-
-function loadImage(dataUrl) {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => resolve(img);
-    img.onerror = reject;
-    img.src = dataUrl;
-  });
-}
-
-function fitImageToCanvas(img) {
-  const maxW = imageCanvas.width;
-  const maxH = imageCanvas.height;
-  const ratio = Math.min(maxW / img.width, maxH / img.height, 1);
-  const drawW = Math.round(img.width * ratio);
-  const drawH = Math.round(img.height * ratio);
-  const dx = Math.round((maxW - drawW) / 2);
-  const dy = Math.round((maxH - drawH) / 2);
-
-  state.canvasScaleX = img.width / drawW;
-  state.canvasScaleY = img.height / drawH;
-
-  return { drawW, drawH, dx, dy };
-}
-
-function drawCanvas() {
-  imageCtx.clearRect(0, 0, imageCanvas.width, imageCanvas.height);
-  imageCtx.fillStyle = "#02111f";
-  imageCtx.fillRect(0, 0, imageCanvas.width, imageCanvas.height);
-
-  if (!state.imageObj) return;
-
-  const fit = fitImageToCanvas(state.imageObj);
-  state.lastFit = fit;
-  imageCtx.drawImage(state.imageObj, fit.dx, fit.dy, fit.drawW, fit.drawH);
-
-  if (state.cropRect) {
-    const { x, y, w, h } = state.cropRect;
-    imageCtx.fillStyle = "rgba(0,0,0,0.35)";
-    imageCtx.fillRect(0, 0, imageCanvas.width, imageCanvas.height);
-
-    imageCtx.drawImage(state.imageObj, fit.dx, fit.dy, fit.drawW, fit.drawH);
-
-    imageCtx.clearRect(x, y, w, h);
-    imageCtx.drawImage(state.imageObj, fit.dx, fit.dy, fit.drawW, fit.drawH);
-
-    imageCtx.strokeStyle = "#22c55e";
-    imageCtx.lineWidth = 2;
-    imageCtx.strokeRect(x, y, w, h);
-
-    imageCtx.fillStyle = "rgba(34,197,94,0.15)";
-    imageCtx.fillRect(x, y, w, h);
-  }
-}
-
-function clampCropToImage(rect) {
-  if (!state.lastFit) return rect;
-  const { dx, dy, drawW, drawH } = state.lastFit;
-
-  let x = Math.max(rect.x, dx);
-  let y = Math.max(rect.y, dy);
-  let w = rect.w;
-  let h = rect.h;
-
-  if (x + w > dx + drawW) w = dx + drawW - x;
-  if (y + h > dy + drawH) h = dy + drawH - y;
-
-  return {
-    x: Math.max(dx, x),
-    y: Math.max(dy, y),
-    w: Math.max(1, w),
-    h: Math.max(1, h),
-  };
-}
-
-function canvasEventPoint(e) {
-  const rect = imageCanvas.getBoundingClientRect();
-  const scaleX = imageCanvas.width / rect.width;
-  const scaleY = imageCanvas.height / rect.height;
-  return {
-    x: (e.clientX - rect.left) * scaleX,
-    y: (e.clientY - rect.top) * scaleY,
-  };
-}
-
-async function handleImageUpload(file) {
-  if (!file) return;
-  const dataUrl = await imageToDataURL(file);
-  const img = await loadImage(dataUrl);
-  state.imageOriginal = dataUrl;
-  state.imageCurrent = dataUrl;
-  state.imageObj = img;
-  state.cropRect = null;
-  croppedPreview.src = dataUrl;
-  drawCanvas();
-  cropInfo.textContent = `Loaded image: ${img.width} × ${img.height}`;
-  setBottomStatus("Image loaded");
-}
-
-function resetCropBox() {
-  state.cropRect = null;
-  drawCanvas();
-  cropInfo.textContent = state.imageObj ? `Image ready: ${state.imageObj.width} × ${state.imageObj.height}` : "No image loaded";
-  setBottomStatus("Crop box reset");
-}
-
-async function applyCrop() {
-  if (!state.imageObj || !state.cropRect || !state.lastFit) {
-    setBottomStatus("Create crop area first");
+function previewImage(file) {
+  if (!file) {
+    imagePreview.src = "";
+    imagePreview.classList.add("hidden");
+    imagePlaceholder.classList.remove("hidden");
     return;
   }
-
-  const fit = state.lastFit;
-  const crop = clampCropToImage(state.cropRect);
-
-  const sx = Math.round((crop.x - fit.dx) * state.canvasScaleX);
-  const sy = Math.round((crop.y - fit.dy) * state.canvasScaleY);
-  const sw = Math.round(crop.w * state.canvasScaleX);
-  const sh = Math.round(crop.h * state.canvasScaleY);
-
-  const tmp = document.createElement("canvas");
-  tmp.width = Math.max(1, sw);
-  tmp.height = Math.max(1, sh);
-  const tctx = tmp.getContext("2d");
-
-  const srcImg = await loadImage(state.imageCurrent);
-  tctx.drawImage(srcImg, sx, sy, sw, sh, 0, 0, sw, sh);
-
-  const newDataUrl = tmp.toDataURL("image/jpeg", 0.92);
-  const newImg = await loadImage(newDataUrl);
-
-  state.imageCurrent = newDataUrl;
-  state.imageObj = newImg;
-  state.cropRect = null;
-  croppedPreview.src = newDataUrl;
-  drawCanvas();
-  cropInfo.textContent = `Crop applied: ${newImg.width} × ${newImg.height}`;
-  setBottomStatus("Crop applied");
-}
-
-function clearImageSeoFields() {
-  altText.value = "";
-  imgTitle.value = "";
-  caption.value = "";
-}
-
-function clearImageAll() {
-  imageFileInput.value = "";
-  state.imageOriginal = null;
-  state.imageCurrent = null;
-  state.imageObj = null;
-  state.cropRect = null;
-  croppedPreview.removeAttribute("src");
-  sceneNotes.value = "";
-  clearImageSeoFields();
-  imageCtx.clearRect(0, 0, imageCanvas.width, imageCanvas.height);
-  imageCtx.fillStyle = "#02111f";
-  imageCtx.fillRect(0, 0, imageCanvas.width, imageCanvas.height);
-  cropInfo.textContent = "No image loaded";
-  setBottomStatus("Cleared all image SEO fields");
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    imagePreview.src = e.target.result;
+    imagePreview.classList.remove("hidden");
+    imagePlaceholder.classList.add("hidden");
+  };
+  reader.readAsDataURL(file);
 }
 
 async function generateImageSeo() {
-  if (!state.imageCurrent) {
-    setBottomStatus("Upload an image first");
+  const file = imageInput.files[0];
+  if (!file) {
+    setStatus("Upload an image first");
     return;
   }
 
   generateImageSeoBtn.disabled = true;
-  setBottomStatus("Reading image & generating WordPress SEO fields...");
+  setStatus("Reading image & generating WordPress SEO fields...");
+
   try {
-    const data = await postJSON("/api/generate-image-seo", {
-      api_key: state.apiKey,
-      image_data_url: state.imageCurrent,
-      scene_notes: sceneNotes.value.trim(),
+    const form = new FormData();
+    form.append("image", file);
+    form.append("scene_notes", sceneNotes.value.trim());
+    form.append("api_key", currentApiKey());
+
+    const res = await fetch("/api/generate-image-seo", {
+      method: "POST",
+      body: form
     });
+    const data = await res.json();
+    if (!res.ok || !data.ok) {
+      throw new Error(data.error || "Failed to generate image SEO.");
+    }
 
     altText.value = data.alt_text || "";
     imgTitle.value = data.img_title || "";
     caption.value = data.caption || "";
-    setBottomStatus("AI image SEO ready");
-  } catch (e) {
-    setBottomStatus(e.message || "Image SEO generation failed");
+    setStatus("Image SEO fields ready");
+  } catch (err) {
+    setStatus(err.message || "Failed to generate image SEO.");
   } finally {
     generateImageSeoBtn.disabled = false;
   }
 }
 
-function copyImageSeoFields() {
-  const text = [
-    `Alt Text: ${altText.value || ""}`,
-    `Image Title: ${imgTitle.value || ""}`,
-    `Caption: ${caption.value
+function clearImageSeo() {
+  imageInput.value = "";
+  sceneNotes.value = "";
+  altText.value = "";
+  imgTitle.value = "";
+  caption.value = "";
+  previewImage(null);
+  setStatus("Image SEO fields cleared");
+}
+
+function copyAllSeo() {
+  const value = [
+    `Focus Keyphrase:\n${focusKeyphrase.value.trim()}`,
+    `SEO Title:\n${seoTitle.value.trim()}`,
+    `Meta Description:\n${metaDescription.value.trim()}`,
+  ].join("\n\n");
+  copyText(value, "Copied all SEO fields");
+}
+
+function copyAllImage() {
+  const value = [
+    `Alt Text:\n${altText.value.trim()}`,
+    `Image Title:\n${imgTitle.value.trim()}`,
+    `Caption:\n${caption.value.trim()}`,
+  ].join("\n\n");
+  copyText(value, "Copied all image fields");
+}
+
+openApiSettingsBtn.addEventListener("click", openApiModal);
+closeApiSettingsBtn.addEventListener("click", closeApiModal);
+testApiKeyBtn.addEventListener("click", testApiKey);
+saveApiKeyBtn.addEventListener("click", saveApiKey);
+clearApiKeyBtn.addEventListener("click", clearApiKey);
+showApiKeyCheckbox.addEventListener("change", () => {
+  apiKeyInput.type = showApiKeyCheckbox.checked ? "text" : "password";
+});
+
+generateSeoBtn.addEventListener("click", generateSeo);
+clearSeoBtn.addEventListener("click", clearSeo);
+copyInputBtn.addEventListener("click", () => copyText(articleInput.value, "Input copied"));
+copyAllSeoBtn.addEventListener("click", copyAllSeo);
+copySeoOutputBtn.addEventListener("click", () => copyText(seoOutput.value, "SEO output copied"));
+
+generateImageSeoBtn.addEventListener("click", generateImageSeo);
+clearImageBtn.addEventListener("click", clearImageSeo);
+copyAllImageBtn.addEventListener("click", copyAllImage);
+imageInput.addEventListener("change", (e) => previewImage(e.target.files[0] || null));
+
+tabButtons.forEach((btn) => {
+  btn.addEventListener("click", () => switchTab(btn.dataset.tab));
+});
+
+document.querySelectorAll("[data-copy-target]").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const id = btn.dataset.copyTarget;
+    const el = document.getElementById(id);
+    if (!el) return;
+    copyText(el.value, `${id} copied`);
+  });
+});
+
+apiModal.addEventListener("click", (e) => {
+  if (e.target === apiModal) closeApiModal();
+});
+
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !apiModal.classList.contains("hidden")) {
+    closeApiModal();
+  }
+});
+
+setApiBadge();
+updatePreview();
+setStatus("Ready.");
