@@ -1,414 +1,632 @@
-import base64
-import html
-import io
-import json
 import os
 import re
-from typing import Dict, List, Optional, Tuple
+import io
+import html
+import json
+import base64
+from typing import List, Dict, Optional
+from urllib.parse import urlparse
 
 import requests
 from bs4 import BeautifulSoup
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, render_template, request, jsonify
 from PIL import Image
 
 app = Flask(__name__)
 
 TOGETHER_BASE_URL = "https://api.together.xyz/v1"
-VISION_MODEL = os.getenv("VISION_MODEL", "Qwen/Qwen3-VL-8B-Instruct")
-SEO_MODEL = os.getenv("SEO_MODEL", "Qwen/Qwen2.5-7B-Instruct-Turbo")
-CONNECT_TIMEOUT = 8
-READ_TIMEOUT = 45
+SEO_MODEL = "Qwen/Qwen2.5-7B-Instruct-Turbo"
+VISION_MODEL = "Qwen/Qwen3-VL-8B-Instruct"
+
+APP_TITLE = "WordPress SEO Studio"
 
 
-# ------------------------------
+# ============================================================
 # Helpers
-# ------------------------------
-def normalize_text(text: str) -> str:
-    text = html.unescape(text or "")
-    text = re.sub(r"\r\n?", "\n", text)
-    text = re.sub(r"[ \t]+", " ", text)
-    text = re.sub(r"\n{3,}", "\n\n", text)
-    return text.strip()
+# ============================================================
+
+def clean_text(s: str) -> str:
+    s = html.unescape(str(s or ""))
+    s = re.sub(r"\s+", " ", s).strip()
+    return s
 
 
-def strip_html_keep_structure(raw_html: str) -> str:
+def strip_tags_keep_breaks(raw_html: str) -> str:
     soup = BeautifulSoup(raw_html or "", "html.parser")
-    for tag in soup(["script", "style", "noscript"]):
-        tag.decompose()
-
-    parts: List[str] = []
-    for node in soup.find_all(["h1", "h2", "h3", "p", "li", "blockquote"]):
-        text = node.get_text(" ", strip=True)
-        if not text:
-            continue
-        name = node.name.lower()
-        if name in {"h1", "h2", "h3"}:
-            parts.append(f"{name.upper()}: {text}")
-        elif name == "li":
-            parts.append(f"- {text}")
-        else:
-            parts.append(text)
-    return normalize_text("\n".join(parts))
-
-
-def detect_embeds(raw: str) -> List[Dict[str, str]]:
-    raw = raw or ""
-    embeds: List[Dict[str, str]] = []
-
-    yt_patterns = [
-        r'https?://(?:www\.)?youtube\.com/watch\?[^\s"\']*v=([\w-]+)',
-        r'https?://(?:www\.)?youtube\.com/embed/([\w-]+)',
-        r'https?://youtu\.be/([\w-]+)',
-        r'https?://(?:www\.)?youtube\.com/shorts/([\w-]+)',
-    ]
-    for pat in yt_patterns:
-        for match in re.finditer(pat, raw, re.I):
-            vid = match.group(1)
-            url = f"https://www.youtube.com/watch?v={vid}"
-            embeds.append({"type": "youtube", "url": url, "label": f"YouTube Video [ID: {vid}]"})
-
-    for match in re.finditer(r'https?://(?:www\.)?(?:twitter|x)\.com/[A-Za-z0-9_]+/status(?:es)?/(\d+)', raw, re.I):
-        full = match.group(0)
-        embeds.append({"type": "twitter", "url": full.replace("x.com", "twitter.com"), "label": "Twitter/X Post"})
-
-    for match in re.finditer(r'https?://(?:www\.)?facebook\.com/[^\s"\']+', raw, re.I):
-        full = match.group(0)
-        if "/videos/" in full or "watch?v=" in full or "video.php" in full:
-            embeds.append({"type": "facebook", "url": full, "label": "Facebook Video"})
-
-    unique = []
-    seen = set()
-    for item in embeds:
-        key = (item["type"], item["url"])
-        if key not in seen:
-            seen.add(key)
-            unique.append(item)
-    return unique
-
-
-MEDIA_RE = re.compile(r'(https?://[^\s"\']+\.(?:jpg|jpeg|png|webp|gif))', re.I)
-
-
-def extract_article_source(article_url: str, article_html: str, article_text: str) -> Dict[str, object]:
-    source_html = article_html or ""
-    source_text = article_text or ""
-
-    if article_url and not source_html and not source_text:
-        r = requests.get(article_url, timeout=(CONNECT_TIMEOUT, READ_TIMEOUT), headers={"User-Agent": "Mozilla/5.0"})
-        r.raise_for_status()
-        source_html = r.text
-
-    if source_html and not source_text:
-        source_text = strip_html_keep_structure(source_html)
-
-    embeds = detect_embeds(source_html + "\n" + source_text + "\n" + (article_url or ""))
-    title_match = re.search(r"^H1:\s*(.+)$", source_text, re.M)
-    title = title_match.group(1).strip() if title_match else ""
-
-    images = []
-    if source_html:
-        soup = BeautifulSoup(source_html, "html.parser")
-        for img in soup.find_all("img"):
-            src = (img.get("src") or "").strip()
-            if src:
-                images.append(src)
-    for m in MEDIA_RE.finditer(source_text):
-        images.append(m.group(1))
-    dedup_images = []
-    seen = set()
-    for url in images:
-        if url not in seen:
-            dedup_images.append(url)
-            seen.add(url)
-
-    return {
-        "title": title,
-        "article_text": normalize_text(source_text),
-        "article_html": source_html,
-        "embeds": embeds,
-        "images": dedup_images[:10],
-    }
-
-
-def build_wp_embed_block(embeds: List[Dict[str, str]]) -> str:
-    if not embeds:
-        return ""
-    lines = []
-    for item in embeds:
-        lines.append(f'<!-- wp:embed {{"url":"{html.escape(item["url"], quote=True)}","type":"rich","providerNameSlug":"{item["type"]}"}} -->')
-        lines.append(f'<figure class="wp-block-embed is-type-rich is-provider-{item["type"]}"><div class="wp-block-embed__wrapper">')
-        lines.append(html.escape(item["url"]))
-        lines.append('</div></figure>')
-        lines.append('<!-- /wp:embed -->')
+    for br in soup.find_all("br"):
+        br.replace_with("\n")
+    text = soup.get_text("\n")
+    lines = [clean_text(x) for x in text.splitlines()]
+    lines = [x for x in lines if x]
     return "\n".join(lines)
 
 
-def estimate_keyphrase(text: str) -> str:
-    words = re.findall(r"[A-Za-zÀ-ÿ0-9']+", text.lower())
-    stop = {
-        "the", "and", "for", "with", "from", "that", "this", "have", "has", "had", "was", "were", "are", "but",
-        "about", "into", "than", "then", "they", "them", "their", "will", "would", "could", "should", "your", "you",
-        "our", "after", "before", "while", "over", "under", "also", "more", "most", "what", "when", "where", "which",
+def detect_language_simple(text: str) -> str:
+    if re.search(r"[\u1780-\u17FF]", text or ""):
+        return "Khmer"
+    if re.search(r"[\u4E00-\u9FFF]", text or ""):
+        return "Chinese"
+    if re.search(r"[\u3040-\u30FF]", text or ""):
+        return "Japanese"
+    if re.search(r"[\u0E00-\u0E7F]", text or ""):
+        return "Thai"
+    if re.search(r"[\u0600-\u06FF]", text or ""):
+        return "Arabic"
+    return "English"
+
+
+def slugify(text: str) -> str:
+    text = clean_text(text).lower()
+    text = re.sub(r"[^\w\s-]", "", text)
+    text = re.sub(r"[\s_-]+", "-", text).strip("-")
+    return text or "article"
+
+
+def first_nonempty(items: List[str], default: str = "") -> str:
+    for x in items:
+        if clean_text(x):
+            return clean_text(x)
+    return default
+
+
+# ============================================================
+# Embed detection
+# ============================================================
+
+class EmbedHelper:
+    YOUTUBE_PATTERNS = [
+        r"youtube\.com/embed/([\w-]+)",
+        r"youtube\.com/watch\?[^\"\'\s]*v=([\w-]+)",
+        r"youtu\.be/([\w-]+)",
+        r"youtube\.com/v/([\w-]+)",
+        r"youtube\.com/shorts/([\w-]+)",
+    ]
+    FACEBOOK_PATTERNS = [
+        r"facebook\.com/[^\s\"\'<>]+/videos/([\d]+)",
+        r"facebook\.com/watch/?\?v=(\d+)",
+        r"facebook\.com/video/watch\?v=(\d+)",
+        r"facebook\.com/video\.php\?v=(\d+)",
+        r"fb\.watch/([\w-]+)",
+    ]
+
+    @classmethod
+    def detect(cls, raw: str) -> Dict:
+        raw = str(raw or "")
+        raw_lower = raw.lower()
+
+        for pat in cls.YOUTUBE_PATTERNS:
+            m = re.search(pat, raw, re.I)
+            if m:
+                vid_id = m.group(1).split("&")[0].split("?")[0].strip()
+                watch_url = f"https://www.youtube.com/watch?v={vid_id}"
+                return {
+                    "type": "youtube",
+                    "icon": "▶",
+                    "label": f"YouTube Video [ID: {vid_id}]",
+                    "url": watch_url,
+                    "embed_html": f'<div class="video-wrap"><iframe src="https://www.youtube.com/embed/{vid_id}" frameborder="0" allowfullscreen></iframe></div>',
+                }
+
+        tw = re.search(r'https?://(?:www\.)?(?:twitter|x)\.com/([A-Za-z0-9_]+)/status(?:es)?/(\d+)', raw, re.I)
+        if tw:
+            url = f"https://twitter.com/{tw.group(1)}/status/{tw.group(2)}"
+            return {
+                "type": "twitter",
+                "icon": "🐦",
+                "label": f"Twitter/X Post [ID: {tw.group(2)}]",
+                "url": url,
+                "embed_html": f'<blockquote class="embed-link"><a href="{html.escape(url)}" target="_blank">{html.escape(url)}</a></blockquote>',
+            }
+
+        for pat in cls.FACEBOOK_PATTERNS:
+            m = re.search(pat, raw, re.I)
+            if m:
+                full = re.search(r'https?://(?:www\.)?facebook\.com/[^\s\"\'<>]+', raw, re.I)
+                fb_url = full.group(0) if full else raw
+                return {
+                    "type": "facebook",
+                    "icon": "📘",
+                    "label": "Facebook Video",
+                    "url": fb_url,
+                    "embed_html": f'<blockquote class="embed-link"><a href="{html.escape(fb_url)}" target="_blank">{html.escape(fb_url)}</a></blockquote>',
+                }
+
+        iframe_src = re.search(r'src=["\'](https?://[^"\'>\s]+)["\']', raw, re.I)
+        if iframe_src:
+            src = iframe_src.group(1)
+            return {
+                "type": "generic",
+                "icon": "▶",
+                "label": "Embedded Media",
+                "url": src,
+                "embed_html": f'<blockquote class="embed-link"><a href="{html.escape(src)}" target="_blank">{html.escape(src)}</a></blockquote>',
+            }
+
+        return {"type": None}
+
+
+# ============================================================
+# Article parsing
+# ============================================================
+
+def fetch_url_html(url: str) -> str:
+    headers = {
+        "User-Agent": "Mozilla/5.0",
+        "Accept-Language": "en-US,en;q=0.9"
     }
-    freq: Dict[str, int] = {}
-    for w in words:
-        if len(w) < 4 or w in stop:
+    r = requests.get(url, timeout=20, headers=headers)
+    r.raise_for_status()
+    return r.text
+
+
+def extract_title_from_html(raw_html: str) -> str:
+    soup = BeautifulSoup(raw_html or "", "html.parser")
+    og = soup.find("meta", attrs={"property": "og:title"})
+    if og and og.get("content"):
+        return clean_text(og["content"])
+    if soup.title and soup.title.text:
+        return clean_text(soup.title.text)
+    h1 = soup.find("h1")
+    if h1:
+        return clean_text(h1.get_text(" "))
+    return ""
+
+
+def parse_blocks_from_html(raw_html: str) -> List[Dict]:
+    soup = BeautifulSoup(raw_html or "", "html.parser")
+    blocks: List[Dict] = []
+
+    for tag in soup.find_all(["h1", "h2", "h3", "p", "iframe", "blockquote", "figure"]):
+        name = tag.name.lower()
+
+        if name == "h1":
+            txt = clean_text(tag.get_text(" "))
+            if txt:
+                blocks.append({"type": "h1", "content": txt})
             continue
-        freq[w] = freq.get(w, 0) + 1
-    top = [w for w, _ in sorted(freq.items(), key=lambda x: (-x[1], x[0]))[:3]]
-    return " ".join(top[:2]) if top else "focus topic"
+
+        if name == "h2":
+            txt = clean_text(tag.get_text(" "))
+            if txt:
+                blocks.append({"type": "h2", "content": txt})
+            continue
+
+        if name == "h3":
+            txt = clean_text(tag.get_text(" "))
+            if txt:
+                blocks.append({"type": "h3", "content": txt})
+            continue
+
+        if name == "p":
+            raw_inner = str(tag)
+            emb = EmbedHelper.detect(raw_inner)
+            if emb.get("type"):
+                blocks.append({"type": "embed", "content": emb["embed_html"], "label": emb["label"]})
+            txt = clean_text(tag.get_text(" "))
+            if txt and len(txt.split()) >= 3:
+                blocks.append({"type": "p", "content": html.escape(txt)})
+            continue
+
+        if name in ("iframe", "blockquote", "figure"):
+            raw_inner = str(tag)
+            emb = EmbedHelper.detect(raw_inner)
+            if emb.get("type"):
+                blocks.append({"type": "embed", "content": emb["embed_html"], "label": emb["label"]})
+
+    deduped = []
+    seen = set()
+    for b in blocks:
+        key = (b["type"], clean_text(b["content"])[:300])
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(b)
+    return deduped
 
 
-def fallback_generate(article_text: str, title: str, embeds: List[Dict[str, str]]) -> Dict[str, str]:
-    body = normalize_text(article_text)
-    sentences = re.split(r"(?<=[.!?])\s+", body)
-    excerpt = " ".join(sentences[:2]).strip()[:320]
-    focus = estimate_keyphrase(title + " " + body)
-    seo_title = (title or focus.title() or "Article Update").strip()
-    if len(seo_title) > 60:
-        seo_title = seo_title[:60].rsplit(" ", 1)[0]
-    meta = excerpt[:160].rsplit(" ", 1)[0] if len(excerpt) > 160 else excerpt
-    slug = re.sub(r"[^a-z0-9]+", "-", (title or focus).lower()).strip("-") or "article"
-    cleaned_html = "\n".join(f"<p>{html.escape(p)}</p>" for p in body.split("\n\n") if p.strip())
-    headings = [line[4:].strip() for line in body.splitlines() if line.startswith("H2:")]
+def parse_plain_text(raw_text: str) -> List[Dict]:
+    text = raw_text or ""
+    lines = [x.strip() for x in text.splitlines()]
+    lines = [x for x in lines if x]
+
+    blocks: List[Dict] = []
+    h1_used = False
+    for ln in lines:
+        emb = EmbedHelper.detect(ln)
+        if emb.get("type"):
+            blocks.append({"type": "embed", "content": emb["embed_html"], "label": emb["label"]})
+            continue
+
+        if not h1_used:
+            blocks.append({"type": "h1", "content": ln})
+            h1_used = True
+            continue
+
+        if len(ln.split()) <= 9 and not ln.endswith("."):
+            blocks.append({"type": "h2", "content": ln})
+        else:
+            blocks.append({"type": "p", "content": html.escape(ln)})
+
+    return blocks
+
+
+def extract_focus_keyphrase(title: str, text: str) -> str:
+    source = clean_text(title or text)
+    words = re.findall(r"[A-Za-z0-9\u1780-\u17FF]+", source)
+    if not words:
+        return "wordpress seo"
+    key = " ".join(words[:4]).strip().lower()
+    return key[:60]
+
+
+def make_meta_description(title: str, paragraphs: List[str]) -> str:
+    title = clean_text(title)
+    base = clean_text(" ".join(paragraphs[:2]))
+    if not base:
+        base = title
+    desc = base
+    if title and title.lower() not in desc.lower():
+        desc = f"{title}. {desc}"
+    desc = clean_text(desc)
+    if len(desc) > 160:
+        desc = desc[:157].rsplit(" ", 1)[0] + "..."
+    return desc
+
+
+def derive_seo_fields(blocks: List[Dict], page_title: str = "") -> Dict:
+    h1 = first_nonempty([b["content"] for b in blocks if b["type"] == "h1"], page_title or "Untitled Article")
+    paragraphs = [BeautifulSoup(b["content"], "html.parser").get_text(" ") for b in blocks if b["type"] == "p"]
+    focus_keyphrase = extract_focus_keyphrase(h1, " ".join(paragraphs[:3]))
+    seo_title = h1[:60]
+    meta_description = make_meta_description(h1, paragraphs)
+    slug = slugify(h1)
     return {
-        "focus_keyphrase": focus,
+        "focus_keyphrase": focus_keyphrase,
         "seo_title": seo_title,
-        "meta_description": meta,
+        "meta_description": meta_description,
         "slug": slug,
-        "excerpt": meta,
-        "tags": ", ".join([w for w in focus.split()][:6]),
-        "wp_html": build_wp_embed_block(embeds) + ("\n" if embeds and cleaned_html else "") + cleaned_html,
-        "clean_article": body,
-        "headings": headings,
+        "title": h1,
     }
 
 
-def together_chat(api_key: str, model: str, messages: List[Dict], max_tokens: int = 500, temperature: float = 0.2) -> str:
+def blocks_to_seo_html(blocks: List[Dict]) -> str:
+    out = []
+    h2_count = 0
+
+    for b in blocks:
+        if b["type"] == "h1":
+            out.append(f"<h1>{html.escape(clean_text(b['content']))}</h1>")
+        elif b["type"] == "h2":
+            h2_count += 1
+            out.append(f"<h2>{html.escape(clean_text(b['content']))}</h2>")
+        elif b["type"] == "h3":
+            out.append(f"<h3>{html.escape(clean_text(b['content']))}</h3>")
+        elif b["type"] == "p":
+            txt = b["content"]
+            out.append(f"<p>{txt}</p>")
+        elif b["type"] == "embed":
+            out.append(b["content"])
+
+    return "\n\n".join(out)
+
+
+def blocks_to_plain_preview(blocks: List[Dict]) -> str:
+    parts = []
+    for b in blocks:
+        if b["type"] == "embed":
+            parts.append(f"[EMBED] {b.get('label', 'Embedded Media')}")
+        else:
+            parts.append(clean_text(BeautifulSoup(b["content"], "html.parser").get_text(" ")))
+    return "\n\n".join([x for x in parts if x])
+
+
+def make_wp_html(seo: Dict, body_html: str) -> str:
+    return f"""<!-- wp:heading {{"level":1}} -->
+<h1>{html.escape(seo["title"])}</h1>
+<!-- /wp:heading -->
+
+{body_html}
+
+<!-- wp:yoast-seo/meta-description -->
+<p>{html.escape(seo["meta_description"])}</p>
+<!-- /wp:yoast-seo/meta-description -->"""
+
+
+# ============================================================
+# Together AI
+# ============================================================
+
+def together_headers(api_key: str) -> Dict[str, str]:
+    return {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    }
+
+
+def verify_api_key(api_key: str) -> Dict:
+    r = requests.get(
+        f"{TOGETHER_BASE_URL}/models",
+        headers=together_headers(api_key),
+        timeout=(6, 12),
+    )
+    if r.status_code >= 400:
+        raise RuntimeError(r.text[:300])
+    return r.json()
+
+
+def chat_completion(api_key: str, model: str, messages: List[Dict], max_tokens: int = 300) -> Dict:
+    payload = {
+        "model": model,
+        "messages": messages,
+        "temperature": 0.2,
+        "top_p": 0.9,
+        "max_tokens": max_tokens,
+    }
     r = requests.post(
         f"{TOGETHER_BASE_URL}/chat/completions",
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-        },
-        json={
-            "model": model,
-            "messages": messages,
-            "temperature": temperature,
-            "top_p": 0.9,
-            "max_tokens": max_tokens,
-            "response_format": {"type": "json_object"},
-        },
-        timeout=(CONNECT_TIMEOUT, READ_TIMEOUT),
+        headers=together_headers(api_key),
+        json=payload,
+        timeout=(8, 40),
     )
-    r.raise_for_status()
-    data = r.json()
-    content = data["choices"][0]["message"]["content"]
+    if r.status_code >= 400:
+        raise RuntimeError(r.text[:400])
+    return r.json()
+
+
+def extract_content(resp: Dict) -> str:
+    choices = resp.get("choices") or []
+    if not choices:
+        return ""
+    msg = choices[0].get("message") or {}
+    content = msg.get("content", "")
     if isinstance(content, list):
-        return "\n".join(x.get("text", "") if isinstance(x, dict) else str(x) for x in content)
-    return str(content)
+        texts = []
+        for item in content:
+            if isinstance(item, dict):
+                texts.append(item.get("text", ""))
+            else:
+                texts.append(str(item))
+        return "\n".join(texts).strip()
+    return str(content or "").strip()
 
 
-def parse_json_loose(raw: str) -> Dict:
-    raw = (raw or "").strip()
-    if raw.startswith("```"):
-        raw = raw.replace("```json", "").replace("```", "").strip()
-    try:
-        return json.loads(raw)
-    except Exception:
-        m = re.search(r"\{.*\}", raw, re.S)
-        if not m:
-            raise
-        return json.loads(m.group(0))
-
-
-def ai_generate_seo(api_key: str, article_text: str, title: str, embeds: List[Dict[str, str]]) -> Dict[str, str]:
-    prompt = f"""Return ONLY valid JSON.
+def ai_generate_seo_fields(api_key: str, article_text: str, lang: str) -> Dict:
+    prompt = f"""Return ONLY valid JSON in {lang}.
 
 Keys:
 {{
   "focus_keyphrase": "2-4 words",
-  "seo_title": "50-60 chars",
-  "meta_description": "120-160 chars",
-  "slug": "short-url-slug",
-  "excerpt": "short excerpt",
-  "tags": "comma separated tags",
-  "clean_article_html": "clean html body with h2 and p tags",
-  "h2_headings": ["heading one", "heading two"]
+  "seo_title": "max 60 chars",
+  "meta_description": "max 160 chars"
 }}
 
 Rules:
-- Keep meaning from the article.
-- Keep important embeds/videos/social references in the article when relevant.
-- SEO title must be concise.
-- Meta description should be click-friendly but natural.
-- clean_article_html must be valid HTML only.
-- Use H2 sections when possible.
-- No markdown.
+- concise
+- Yoast-friendly
+- no markdown
+- no explanation
 
-Title: {title}
-
-Article:
-{article_text[:6000]}
+ARTICLE:
+{article_text[:1800]}
 """
-    raw = together_chat(api_key, SEO_MODEL, [{"role": "user", "content": prompt}], max_tokens=850, temperature=0.2)
-    data = parse_json_loose(raw)
-    cleaned_html = str(data.get("clean_article_html", "")).strip()
-    wp_html = build_wp_embed_block(embeds) + ("\n" if embeds and cleaned_html else "") + cleaned_html
-    return {
-        "focus_keyphrase": str(data.get("focus_keyphrase", "")).strip(),
-        "seo_title": str(data.get("seo_title", "")).strip(),
-        "meta_description": str(data.get("meta_description", "")).strip(),
-        "slug": str(data.get("slug", "")).strip(),
-        "excerpt": str(data.get("excerpt", "")).strip(),
-        "tags": str(data.get("tags", "")).strip(),
-        "wp_html": wp_html.strip(),
-        "clean_article": BeautifulSoup(cleaned_html, "html.parser").get_text("\n", strip=True),
-        "headings": data.get("h2_headings", []),
-    }
-
-
-def optimize_image(file_storage) -> Tuple[str, str]:
-    img = Image.open(file_storage.stream).convert("RGB")
-    max_side = 1280
-    w, h = img.size
-    if max(w, h) > max_side:
-        scale = max_side / float(max(w, h))
-        img = img.resize((max(1, int(w * scale)), max(1, int(h * scale))), Image.LANCZOS)
-    bio = io.BytesIO()
-    img.save(bio, format="JPEG", quality=85, optimize=True)
-    b64 = base64.b64encode(bio.getvalue()).decode("utf-8")
-    return b64, "image/jpeg"
-
-
-def ai_generate_image_seo(api_key: str, image_file, scene_hint: str = "") -> Dict[str, str]:
-    b64, media = optimize_image(image_file)
-    data_url = f"data:{media};base64,{b64}"
-    prompt = f"""Return ONLY valid JSON with these keys:
-{{
-  "alt_text": "8-15 words",
-  "img_title": "4-10 words, Title Case",
-  "caption": "15-30 words, one sentence"
-}}
-
-Rules:
-- Describe only what is visible.
-- Natural journalistic style.
-- No generic phrases like image/photo/picture.
-- No markdown.
-Context hint: {scene_hint}
-"""
-    raw = together_chat(
+    resp = chat_completion(
         api_key,
-        VISION_MODEL,
-        [{
-            "role": "user",
-            "content": [
-                {"type": "text", "text": prompt},
-                {"type": "image_url", "image_url": {"url": data_url}},
-            ],
-        }],
-        max_tokens=250,
-        temperature=0.15,
+        SEO_MODEL,
+        [{"role": "user", "content": prompt}],
+        max_tokens=220
     )
-    data = parse_json_loose(raw)
+    raw = extract_content(resp)
+    raw = raw.replace("```json", "").replace("```", "").strip()
+    data = json.loads(raw)
     return {
-        "alt_text": str(data.get("alt_text", "")).strip(),
-        "img_title": str(data.get("img_title", "")).strip(),
-        "caption": str(data.get("caption", "")).strip(),
+        "focus_keyphrase": clean_text(data.get("focus_keyphrase", ""))[:80],
+        "seo_title": clean_text(data.get("seo_title", ""))[:60],
+        "meta_description": clean_text(data.get("meta_description", ""))[:160],
     }
 
 
-# ------------------------------
+def ai_generate_image_seo(api_key: str, image_b64: str, mime: str, lang: str = "English") -> Dict:
+    content = [
+        {
+            "type": "text",
+            "text": f"""Look at this image and return ONLY valid JSON in {lang}.
+
+Keys:
+{{
+  "seo_title": "max 60 chars",
+  "alt_text": "clear alt text",
+  "caption": "short caption",
+  "description": "short seo description",
+  "slug": "image-file-slug"
+}}
+"""
+        },
+        {
+            "type": "image_url",
+            "image_url": {
+                "url": f"data:{mime};base64,{image_b64}"
+            }
+        }
+    ]
+
+    payload = {
+        "model": VISION_MODEL,
+        "messages": [{"role": "user", "content": content}],
+        "temperature": 0.2,
+        "top_p": 0.9,
+        "max_tokens": 220,
+    }
+
+    r = requests.post(
+        f"{TOGETHER_BASE_URL}/chat/completions",
+        headers=together_headers(api_key),
+        json=payload,
+        timeout=(8, 45),
+    )
+    if r.status_code >= 400:
+        raise RuntimeError(r.text[:400])
+
+    raw = extract_content(r.json())
+    raw = raw.replace("```json", "").replace("```", "").strip()
+    data = json.loads(raw)
+    return {
+        "seo_title": clean_text(data.get("seo_title", ""))[:60],
+        "alt_text": clean_text(data.get("alt_text", ""))[:160],
+        "caption": clean_text(data.get("caption", ""))[:180],
+        "description": clean_text(data.get("description", ""))[:220],
+        "slug": slugify(data.get("slug", "") or data.get("seo_title", "") or "image"),
+    }
+
+
+# ============================================================
+# Image helpers
+# ============================================================
+
+def optimize_image_upload(file_storage) -> Dict:
+    img = Image.open(file_storage.stream).convert("RGB")
+    w, h = img.size
+    longest = max(w, h)
+    if longest > 1280:
+        ratio = 1280 / float(longest)
+        img = img.resize((int(w * ratio), int(h * ratio)))
+    out = io.BytesIO()
+    img.save(out, format="JPEG", quality=88, optimize=True)
+    out.seek(0)
+    b64 = base64.b64encode(out.read()).decode("utf-8")
+    return {
+        "base64": b64,
+        "mime": "image/jpeg",
+        "width": img.size[0],
+        "height": img.size[1],
+    }
+
+
+def image_local_fallback(filename: str) -> Dict:
+    base = os.path.splitext(filename or "image")[0]
+    nice = clean_text(base.replace("-", " ").replace("_", " ")) or "Image"
+    return {
+        "seo_title": nice[:60],
+        "alt_text": nice,
+        "caption": f"{nice} preview",
+        "description": f"{nice} optimized for WordPress SEO.",
+        "slug": slugify(nice),
+    }
+
+
+# ============================================================
 # Routes
-# ------------------------------
-@app.get("/")
+# ============================================================
+
+@app.route("/")
 def index():
-    return render_template("index.html")
+    return render_template("index.html", app_title=APP_TITLE)
+
+
+@app.post("/api/verify-key")
+def api_verify_key():
+    data = request.get_json(force=True)
+    api_key = (data.get("api_key") or "").strip()
+    if not api_key:
+        return jsonify({"ok": False, "error": "Missing API key"}), 400
+    try:
+        verify_api_key(api_key)
+        return jsonify({"ok": True, "message": "API key is valid"})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
 
 
 @app.post("/api/generate-seo")
-def generate_seo():
-    payload = request.get_json(force=True)
-    api_key = (payload.get("api_key") or "").strip()
-    article_url = (payload.get("article_url") or "").strip()
-    article_html = payload.get("article_html") or ""
-    article_text = payload.get("article_text") or ""
+def api_generate_seo():
+    data = request.get_json(force=True)
+    raw_input = data.get("raw_input", "") or ""
+    article_url = data.get("article_url", "") or ""
+    api_key = (data.get("api_key") or "").strip()
 
     try:
-        source = extract_article_source(article_url, article_html, article_text)
-        if not source["article_text"]:
-            return jsonify({"ok": False, "error": "Please enter Article URL, HTML, or plain article text."}), 400
+        if article_url.strip():
+            raw_input = fetch_url_html(article_url.strip())
+
+        if not raw_input.strip():
+            return jsonify({"ok": False, "error": "Input is empty"}), 400
+
+        is_html = bool(re.search(r"<[a-z][\s\S]*>", raw_input, re.I))
+        title_guess = extract_title_from_html(raw_input) if is_html else ""
+        blocks = parse_blocks_from_html(raw_input) if is_html else parse_plain_text(raw_input)
+        seo = derive_seo_fields(blocks, title_guess)
+
+        article_text = blocks_to_plain_preview(blocks)
+        lang = detect_language_simple(article_text)
 
         if api_key:
             try:
-                result = ai_generate_seo(api_key, source["article_text"], source["title"], source["embeds"])
+                ai = ai_generate_seo_fields(api_key, article_text, lang)
+                if ai.get("focus_keyphrase"):
+                    seo["focus_keyphrase"] = ai["focus_keyphrase"]
+                if ai.get("seo_title"):
+                    seo["seo_title"] = ai["seo_title"]
+                if ai.get("meta_description"):
+                    seo["meta_description"] = ai["meta_description"]
             except Exception:
-                result = fallback_generate(source["article_text"], source["title"], source["embeds"])
-        else:
-            result = fallback_generate(source["article_text"], source["title"], source["embeds"])
+                pass
 
-        result["embeds"] = source["embeds"]
-        result["images"] = source["images"]
-        return jsonify({"ok": True, "data": result})
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
+        seo_html = blocks_to_seo_html(blocks)
+        wp_html = make_wp_html(seo, seo_html)
 
-
-@app.post("/api/ai-fields")
-def ai_fields():
-    payload = request.get_json(force=True)
-    api_key = (payload.get("api_key") or "").strip()
-    article_text = (payload.get("article_text") or "").strip()
-    title = (payload.get("title") or "").strip()
-    if not api_key:
-        return jsonify({"ok": False, "error": "API key is required for AI SEO Fields."}), 400
-    try:
-        result = ai_generate_seo(api_key, article_text, title, [])
-        variants = [
-            result["seo_title"],
-            (result["seo_title"] + " Live Updates")[:60].strip(),
-            (result["seo_title"] + " Explained")[:60].strip(),
-        ]
-        meta_variants = [
-            result["meta_description"],
-            result["meta_description"][:150].rstrip(" .") + ".",
-            (result["excerpt"] or result["meta_description"])[:155].rstrip(" .") + ".",
-        ]
         return jsonify({
             "ok": True,
-            "data": {
-                "focus_keyphrase": result["focus_keyphrase"],
-                "seo_titles": variants,
-                "meta_descriptions": meta_variants,
-            },
+            "language": lang,
+            "title": seo["title"],
+            "focus_keyphrase": seo["focus_keyphrase"],
+            "seo_title": seo["seo_title"],
+            "meta_description": seo["meta_description"],
+            "slug": seo["slug"],
+            "seo_output": seo_html,
+            "wp_html_output": wp_html,
+            "plain_preview": article_text,
+            "status": f"Generated SEO successfully | 🌐 {lang}"
         })
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
 @app.post("/api/image-seo")
-def image_seo():
+def api_image_seo():
     api_key = (request.form.get("api_key") or "").strip()
-    scene_hint = (request.form.get("scene_hint") or "").strip()
-    image_file = request.files.get("image")
-    if not image_file:
-        return jsonify({"ok": False, "error": "Please upload an image."}), 400
+    image = request.files.get("image")
+
+    if not image:
+        return jsonify({"ok": False, "error": "No image uploaded"}), 400
 
     try:
+        img_data = optimize_image_upload(image)
+        result = None
+
         if api_key:
-            result = ai_generate_image_seo(api_key, image_file, scene_hint)
-        else:
-            result = {
-                "alt_text": "Uploaded image with visible subject and scene details",
-                "img_title": "Uploaded Image Scene",
-                "caption": "Uploaded image showing the main subject and scene context provided by the user.",
-            }
-        return jsonify({"ok": True, "data": result})
+            try:
+                result = ai_generate_image_seo(api_key, img_data["base64"], img_data["mime"], "English")
+            except Exception:
+                result = None
+
+        if not result:
+            result = image_local_fallback(image.filename)
+
+        return jsonify({
+            "ok": True,
+            "preview_data_url": f"data:{img_data['mime']};base64,{img_data['base64']}",
+            "width": img_data["width"],
+            "height": img_data["height"],
+            "seo_title": result["seo_title"],
+            "alt_text": result["alt_text"],
+            "caption": result["caption"],
+            "description": result["description"],
+            "slug": result["slug"],
+            "status": f"Image SEO ready | {img_data['width']}×{img_data['height']}"
+        })
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port, debug=True)
