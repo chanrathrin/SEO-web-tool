@@ -1,191 +1,465 @@
 const $ = (id) => document.getElementById(id);
 
-const state = {
-  seoTitles: [],
-  metaDescriptions: []
-};
+let currentApiKey = localStorage.getItem("together_api_key") || "";
+let currentImageFile = null;
 
-function setStatus(text, isError = false) {
-  const bar = $('statusBar');
-  bar.textContent = text;
-  bar.style.color = isError ? '#ef4444' : '#3d5a7a';
+// ============================================================
+// Init
+// ============================================================
+
+document.addEventListener("DOMContentLoaded", () => {
+  initTabs();
+  initApiModal();
+  initSeoTab();
+  initImageTab();
+  syncApiUi();
+  updateGooglePreview();
+  updateSeoMeters();
+});
+
+// ============================================================
+// Status
+// ============================================================
+
+function setStatus(text) {
+  $("statusText").textContent = text || "Ready";
 }
 
-function updateBadge() {
-  const val = $('apiKey').value.trim();
-  $('apiBadge').textContent = val ? '● API key active' : '○ API not configured';
-  $('apiBadge').style.color = val ? '#22c55e' : '#4a6380';
-}
+// ============================================================
+// Tabs
+// ============================================================
 
-function switchTab(name) {
-  document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.tab === name));
-  document.querySelectorAll('.tab-panel').forEach(panel => panel.classList.toggle('active', panel.id === name));
-}
-
-function updateCounters() {
-  $('seoTitleCount').textContent = `${$('seoTitle').value.length} / 60`;
-  $('metaCount').textContent = `${$('metaDescription').value.trim().length} / 160`;
-  $('previewTitle').textContent = $('seoTitle').value.trim() || 'SEO Title will appear here';
-  $('previewMeta').textContent = $('metaDescription').value.trim() || 'Meta description preview will appear here.';
-}
-
-function renderVariants(containerId, items, onClick) {
-  const box = $(containerId);
-  box.innerHTML = '';
-  items.forEach((item) => {
-    const div = document.createElement('div');
-    div.className = 'variant-item';
-    div.textContent = item;
-    div.addEventListener('click', () => onClick(item));
-    box.appendChild(div);
+function initTabs() {
+  document.querySelectorAll(".tab-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".tab-btn").forEach(x => x.classList.remove("active"));
+      document.querySelectorAll(".tab-page").forEach(x => x.classList.remove("active"));
+      btn.classList.add("active");
+      $(btn.dataset.tab).classList.add("active");
+    });
   });
 }
 
-function renderEmbeds(items) {
-  const box = $('embedList');
-  box.innerHTML = '';
-  if (!items || !items.length) {
-    box.className = 'embed-list empty';
-    box.textContent = 'No embeds detected';
-    return;
+// ============================================================
+// API Modal
+// ============================================================
+
+function syncApiUi() {
+  const badge = $("apiBadge");
+  const input = $("apiKeyInput");
+
+  input.value = currentApiKey || "";
+
+  badge.classList.remove("badge-off", "badge-session", "badge-on");
+  if (!currentApiKey) {
+    badge.textContent = "○ API not configured";
+    badge.classList.add("badge-off");
+  } else {
+    badge.textContent = "● API key saved";
+    badge.classList.add("badge-on");
   }
-  box.className = 'embed-list';
-  items.forEach((item) => {
-    const row = document.createElement('div');
-    row.className = 'embed-item';
-    row.innerHTML = `<div class="embed-type">${item.type}</div><div>${item.label || item.type}</div><a href="${item.url}" target="_blank" rel="noopener">${item.url}</a>`;
-    box.appendChild(row);
+}
+
+function initApiModal() {
+  $("openApiModalBtn").addEventListener("click", () => {
+    $("apiModal").classList.remove("hidden");
+  });
+
+  $("closeApiModalBtn").addEventListener("click", () => {
+    $("apiModal").classList.add("hidden");
+  });
+
+  $("showApiKey").addEventListener("change", (e) => {
+    $("apiKeyInput").type = e.target.checked ? "text" : "password";
+  });
+
+  $("testApiKeyBtn").addEventListener("click", async () => {
+    const key = $("apiKeyInput").value.trim();
+    if (!key) {
+      setApiModalStatus("Missing API key");
+      return;
+    }
+    setApiModalStatus("Testing...");
+    try {
+      const r = await fetch("/api/verify-key", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ api_key: key })
+      });
+      const data = await r.json();
+      if (!r.ok || !data.ok) throw new Error(data.error || "Failed");
+      setApiModalStatus("✓ API key is valid");
+    } catch (err) {
+      setApiModalStatus("✗ " + err.message);
+    }
+  });
+
+  $("saveApiKeyBtn").addEventListener("click", () => {
+    currentApiKey = $("apiKeyInput").value.trim();
+    localStorage.setItem("together_api_key", currentApiKey);
+    syncApiUi();
+    setApiModalStatus(currentApiKey ? "✓ Key saved & applied" : "Key cleared");
+    setStatus(currentApiKey ? "API key loaded" : "API key cleared");
+    $("apiModal").classList.add("hidden");
+  });
+
+  $("sessionApiKeyBtn").addEventListener("click", () => {
+    currentApiKey = $("apiKeyInput").value.trim();
+    syncApiUi();
+    setApiModalStatus(currentApiKey ? "● Session key active" : "Key cleared");
+    setStatus(currentApiKey ? "API key loaded (session)" : "API key cleared");
+    $("apiModal").classList.add("hidden");
+  });
+
+  $("clearApiKeyBtn").addEventListener("click", () => {
+    currentApiKey = "";
+    localStorage.removeItem("together_api_key");
+    syncApiUi();
+    setApiModalStatus("Saved key cleared");
+    setStatus("API key cleared");
   });
 }
 
-function clearSeo() {
-  ['articleUrl','articleHtml','articleText','focusKeyphrase','seoTitle','metaDescription','slug','excerpt','tags','cleanArticle','wpHtml'].forEach(id => $(id).value = '');
-  renderEmbeds([]);
-  $('seoVariants').innerHTML = '';
-  $('metaVariants').innerHTML = '';
-  updateCounters();
-  setStatus('Cleared SEO fields');
+function setApiModalStatus(text) {
+  $("apiModalStatus").textContent = text;
+}
+
+// ============================================================
+// SEO Tab
+// ============================================================
+
+function initSeoTab() {
+  $("generateSeoBtn").addEventListener("click", generateSeo);
+  $("fetchGenerateBtn").addEventListener("click", generateSeo);
+  $("clearSeoBtn").addEventListener("click", clearSeoFields);
+
+  $("copySeoOutputBtn").addEventListener("click", () => copyText($("seoOutput").value));
+  $("copyWpOutputBtn").addEventListener("click", () => copyText($("wpHtmlOutput").value));
+  $("copyInputBtn").addEventListener("click", () => copyText($("rawInput").value));
+
+  $("copyAllFieldsBtn").addEventListener("click", () => {
+    const payload = [
+      `Focus Keyphrase: ${$("focusKeyphrase").value}`,
+      `SEO Title: ${$("seoTitle").value}`,
+      `Meta Description: ${$("metaDescription").value}`,
+      `Slug: ${$("slugField").value}`
+    ].join("\n");
+    copyText(payload);
+  });
+
+  $("aiFieldsBtn").addEventListener("click", generateAiFieldsOnly);
+
+  $("pasteSampleBtn").addEventListener("click", () => {
+    $("rawInput").value = `<h1>Example News Article About Technology</h1>
+<p>This is a sample article paragraph for testing SEO generation.</p>
+<p>It includes enough text to generate a title, focus keyphrase, and meta description.</p>
+<iframe src="https://www.youtube.com/embed/dQw4w9WgXcQ"></iframe>
+<h2>Main Update</h2>
+<p>The article also contains an embedded video block like your Python app handles.</p>`;
+    setStatus("Sample content loaded");
+  });
+
+  $("seoTitle").addEventListener("input", () => {
+    updateGooglePreview();
+    updateSeoMeters();
+  });
+  $("metaDescription").addEventListener("input", () => {
+    updateGooglePreview();
+    updateSeoMeters();
+  });
+
+  document.querySelectorAll(".mini-copy").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const target = $(btn.dataset.copyTarget);
+      copyText(target.value);
+    });
+  });
 }
 
 async function generateSeo() {
-  setStatus('Generating SEO...');
+  const rawInput = $("rawInput").value.trim();
+  const articleUrl = $("articleUrl").value.trim();
+
+  if (!rawInput && !articleUrl) {
+    setStatus("Please paste an article first");
+    return;
+  }
+
+  setStatus("Generate SEO started...");
+  $("generateSeoBtn").disabled = true;
+  $("fetchGenerateBtn").disabled = true;
+
   try {
-    const res = await fetch('/api/generate-seo', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+    const r = await fetch("/api/generate-seo", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
       body: JSON.stringify({
-        api_key: $('apiKey').value.trim(),
-        article_url: $('articleUrl').value.trim(),
-        article_html: $('articleHtml').value,
-        article_text: $('articleText').value
+        raw_input: rawInput,
+        article_url: articleUrl,
+        api_key: currentApiKey
       })
     });
-    const data = await res.json();
-    if (!data.ok) throw new Error(data.error || 'Request failed');
-    const d = data.data;
-    $('focusKeyphrase').value = d.focus_keyphrase || '';
-    $('seoTitle').value = d.seo_title || '';
-    $('metaDescription').value = d.meta_description || '';
-    $('slug').value = d.slug || '';
-    $('excerpt').value = d.excerpt || '';
-    $('tags').value = d.tags || '';
-    $('cleanArticle').value = d.clean_article || '';
-    $('wpHtml').value = d.wp_html || '';
-    state.seoTitles = [d.seo_title].filter(Boolean);
-    state.metaDescriptions = [d.meta_description].filter(Boolean);
-    renderVariants('seoVariants', state.seoTitles, (value) => { $('seoTitle').value = value; updateCounters(); });
-    renderVariants('metaVariants', state.metaDescriptions, (value) => { $('metaDescription').value = value; updateCounters(); });
-    renderEmbeds(d.embeds || []);
-    updateCounters();
-    setStatus('SEO generated successfully');
+
+    const data = await r.json();
+    if (!r.ok || !data.ok) throw new Error(data.error || "Generate SEO failed");
+
+    $("plainPreview").value = data.plain_preview || "";
+    $("focusKeyphrase").value = data.focus_keyphrase || "";
+    $("seoTitle").value = data.seo_title || "";
+    $("metaDescription").value = data.meta_description || "";
+    $("slugField").value = data.slug || "";
+    $("seoOutput").value = data.seo_output || "";
+    $("wpHtmlOutput").value = data.wp_html_output || "";
+
+    updateGooglePreview();
+    updateSeoMeters();
+    setStatus(data.status || "Generate SEO completed successfully.");
   } catch (err) {
-    setStatus(err.message, true);
+    setStatus("Error: " + err.message);
+  } finally {
+    $("generateSeoBtn").disabled = false;
+    $("fetchGenerateBtn").disabled = false;
   }
 }
 
-async function generateAiFields() {
-  setStatus('Generating AI SEO fields...');
-  try {
-    const res = await fetch('/api/ai-fields', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        api_key: $('apiKey').value.trim(),
-        article_text: $('articleText').value || $('cleanArticle').value,
-        title: $('seoTitle').value
-      })
-    });
-    const data = await res.json();
-    if (!data.ok) throw new Error(data.error || 'Request failed');
-    $('focusKeyphrase').value = data.data.focus_keyphrase || '';
-    state.seoTitles = data.data.seo_titles || [];
-    state.metaDescriptions = data.data.meta_descriptions || [];
-    if (state.seoTitles[0]) $('seoTitle').value = state.seoTitles[0];
-    if (state.metaDescriptions[0]) $('metaDescription').value = state.metaDescriptions[0];
-    renderVariants('seoVariants', state.seoTitles, (value) => { $('seoTitle').value = value; updateCounters(); });
-    renderVariants('metaVariants', state.metaDescriptions, (value) => { $('metaDescription').value = value; updateCounters(); });
-    updateCounters();
-    setStatus('AI SEO fields ready');
-  } catch (err) {
-    setStatus(err.message, true);
+async function generateAiFieldsOnly() {
+  const rawInput = $("rawInput").value.trim();
+  if (!rawInput) {
+    setStatus("Paste article first");
+    return;
   }
+  await generateSeo();
 }
 
-function clearImage() {
-  $('imageFile').value = '';
-  $('sceneHint').value = '';
-  $('altText').value = '';
-  $('imgTitle').value = '';
-  $('imgCaption').value = '';
-  $('imagePreview').src = '';
-  $('imagePreview').classList.add('hidden');
-  $('imageEmpty').classList.remove('hidden');
-  setStatus('Cleared image SEO fields');
+function clearSeoFields() {
+  [
+    "articleUrl",
+    "rawInput",
+    "plainPreview",
+    "focusKeyphrase",
+    "seoTitle",
+    "metaDescription",
+    "slugField",
+    "seoOutput",
+    "wpHtmlOutput"
+  ].forEach(id => $(id).value = "");
+  updateGooglePreview();
+  updateSeoMeters();
+  setStatus("SEO fields cleared");
+}
+
+function updateGooglePreview() {
+  let title = $("seoTitle").value.trim() || "SEO Title will appear here";
+  let meta = $("metaDescription").value.trim() || "Meta description will appear here...";
+  if (title.length > 60) title = title.slice(0, 57) + "...";
+  if (meta.length > 160) meta = meta.slice(0, 157) + "...";
+  $("googleTitle").textContent = title;
+  $("googleMeta").textContent = meta;
+}
+
+function updateSeoMeters() {
+  updateMeter(
+    $("seoTitle").value.trim().length,
+    60,
+    $("seoTitleCount"),
+    $("seoTitleHint"),
+    $("seoTitleBar")
+  );
+
+  updateMeter(
+    $("metaDescription").value.trim().length,
+    160,
+    $("metaDescCount"),
+    $("metaDescHint"),
+    $("metaDescBar")
+  );
+}
+
+function updateMeter(value, max, countEl, hintEl, barEl) {
+  countEl.textContent = `${value} / ${max}`;
+  let color = "var(--ok)";
+  let hint = "✓ Good length";
+
+  if (value === 0) {
+    hint = "—";
+    color = "var(--text-soft)";
+  } else if (max === 60) {
+    if (value < 30) {
+      hint = `⚠ Too short (${value}/60)`;
+      color = "var(--warn)";
+    } else if (value < 50) {
+      hint = `⚠ Could be longer (${value}/60)`;
+      color = "var(--warn)";
+    } else if (value <= 60) {
+      hint = `✓ Good length (${value}/60)`;
+      color = "var(--ok)";
+    } else {
+      hint = `✗ Too long (${value}/60)`;
+      color = "var(--bad)";
+    }
+  } else {
+    if (value < 120) {
+      hint = `⚠ Too short (${value}/160)`;
+      color = "var(--warn)";
+    } else if (value <= 160) {
+      hint = `✓ Good length (${value}/160)`;
+      color = "var(--ok)";
+    } else {
+      hint = `✗ Too long (${value}/160)`;
+      color = "var(--bad)";
+    }
+  }
+
+  hintEl.textContent = hint;
+  countEl.style.color = color;
+  hintEl.style.color = color;
+  barEl.style.width = `${Math.min(100, (value / max) * 100)}%`;
+  barEl.style.background = color;
+}
+
+// ============================================================
+// Image Tab
+// ============================================================
+
+function initImageTab() {
+  $("imageFile").addEventListener("change", onImageSelected);
+  $("generateImageSeoBtn").addEventListener("click", generateImageSeo);
+  $("clearImageBtn").addEventListener("click", clearImageSeo);
+  $("copyAllImageSeoBtn").addEventListener("click", () => {
+    const payload = [
+      `SEO Title: ${$("imgSeoTitle").value}`,
+      `Alt Text: ${$("imgAltText").value}`,
+      `Caption: ${$("imgCaption").value}`,
+      `Description: ${$("imgDescription").value}`,
+      `Slug: ${$("imgSlug").value}`
+    ].join("\n");
+    copyText(payload);
+  });
+
+  $("safeZone").addEventListener("change", () => {
+    $("safeZoneOverlay").style.display = $("safeZone").checked ? "block" : "none";
+  });
+
+  $("zoomRange").addEventListener("input", () => {
+    const img = $("imagePreview");
+    const z = Number($("zoomRange").value);
+    img.style.transform = `scale(${z})`;
+  });
+
+  document.querySelectorAll(".preset-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".preset-btn").forEach(x => x.classList.remove("active"));
+      btn.classList.add("active");
+      setCanvasRatio(btn.dataset.ratio);
+    });
+  });
+}
+
+function onImageSelected(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  currentImageFile = file;
+
+  const reader = new FileReader();
+  reader.onload = () => {
+    $("imagePreview").src = reader.result;
+    $("imagePreview").classList.remove("hidden");
+    $("canvasPlaceholder").classList.add("hidden");
+    $("imagePreview").style.transform = "scale(1)";
+    $("zoomRange").value = 1;
+    setStatus(`Image loaded: ${file.name}`);
+  };
+  reader.readAsDataURL(file);
+
+  const img = new Image();
+  img.onload = () => {
+    $("imageSizeText").textContent = `${img.width}×${img.height}`;
+    $("imageInfoText").textContent = "Visible: 0% - 100%";
+  };
+  img.src = URL.createObjectURL(file);
+}
+
+function setCanvasRatio(ratioStr) {
+  const frame = document.querySelector(".canvas-frame");
+  let ratio = "1200 / 366";
+
+  if (ratioStr === "800x445") ratio = "800 / 445";
+  if (ratioStr === "1x1") ratio = "1 / 1";
+  if (ratioStr === "16x9") ratio = "16 / 9";
+  if (ratioStr === "4x3") ratio = "4 / 3";
+
+  frame.style.aspectRatio = ratio;
+  setStatus(`Preset set: ${ratioStr}`);
 }
 
 async function generateImageSeo() {
-  const file = $('imageFile').files[0];
-  if (!file) {
-    setStatus('Please upload an image first', true);
+  if (!currentImageFile) {
+    setStatus("Please upload an image first");
     return;
   }
-  setStatus('Generating image SEO...');
+
+  $("generateImageSeoBtn").disabled = true;
+  setStatus("Generating image SEO...");
+
   try {
-    const form = new FormData();
-    form.append('api_key', $('apiKey').value.trim());
-    form.append('scene_hint', $('sceneHint').value.trim());
-    form.append('image', file);
-    const res = await fetch('/api/image-seo', { method: 'POST', body: form });
-    const data = await res.json();
-    if (!data.ok) throw new Error(data.error || 'Request failed');
-    $('altText').value = data.data.alt_text || '';
-    $('imgTitle').value = data.data.img_title || '';
-    $('imgCaption').value = data.data.caption || '';
-    setStatus('Image SEO generated successfully');
+    const fd = new FormData();
+    fd.append("image", currentImageFile);
+    fd.append("api_key", currentApiKey);
+
+    const r = await fetch("/api/image-seo", {
+      method: "POST",
+      body: fd
+    });
+
+    const data = await r.json();
+    if (!r.ok || !data.ok) throw new Error(data.error || "Image SEO failed");
+
+    $("imagePreview").src = data.preview_data_url;
+    $("imagePreview").classList.remove("hidden");
+    $("canvasPlaceholder").classList.add("hidden");
+
+    $("imgSeoTitle").value = data.seo_title || "";
+    $("imgAltText").value = data.alt_text || "";
+    $("imgCaption").value = data.caption || "";
+    $("imgDescription").value = data.description || "";
+    $("imgSlug").value = data.slug || "";
+
+    $("imageSizeText").textContent = `${data.width}×${data.height}`;
+    setStatus(data.status || "Image SEO ready");
   } catch (err) {
-    setStatus(err.message, true);
+    setStatus("Error: " + err.message);
+  } finally {
+    $("generateImageSeoBtn").disabled = false;
   }
 }
 
-function previewImage() {
-  const file = $('imageFile').files[0];
-  if (!file) return clearImage();
-  const url = URL.createObjectURL(file);
-  $('imagePreview').src = url;
-  $('imagePreview').classList.remove('hidden');
-  $('imageEmpty').classList.add('hidden');
+function clearImageSeo() {
+  currentImageFile = null;
+  $("imageFile").value = "";
+  $("imagePreview").src = "";
+  $("imagePreview").classList.add("hidden");
+  $("canvasPlaceholder").classList.remove("hidden");
+  $("zoomRange").value = 1;
+  $("imagePreview").style.transform = "scale(1)";
+  $("imgSeoTitle").value = "";
+  $("imgAltText").value = "";
+  $("imgCaption").value = "";
+  $("imgDescription").value = "";
+  $("imgSlug").value = "";
+  $("imageInfoText").textContent = "Visible: 0% - 100%";
+  $("imageSizeText").textContent = "No image";
+  setStatus("Image SEO fields cleared");
 }
 
-document.querySelectorAll('.tab-btn').forEach(btn => btn.addEventListener('click', () => switchTab(btn.dataset.tab)));
-$('apiKey').addEventListener('input', updateBadge);
-$('seoTitle').addEventListener('input', updateCounters);
-$('metaDescription').addEventListener('input', updateCounters);
-$('generateBtn').addEventListener('click', generateSeo);
-$('aiFieldsBtn').addEventListener('click', generateAiFields);
-$('clearSeoBtn').addEventListener('click', clearSeo);
-$('generateImageSeoBtn').addEventListener('click', generateImageSeo);
-$('clearImageBtn').addEventListener('click', clearImage);
-$('imageFile').addEventListener('change', previewImage);
+// ============================================================
+// Utilities
+// ============================================================
 
-updateBadge();
-updateCounters();
+async function copyText(text) {
+  try {
+    await navigator.clipboard.writeText(text || "");
+    setStatus("Copied to clipboard");
+  } catch {
+    setStatus("Copy failed");
+  }
+}
