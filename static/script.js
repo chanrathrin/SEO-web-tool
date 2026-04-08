@@ -1,362 +1,191 @@
-const STORAGE_KEY = "wp_seo_studio_api_key";
+const $ = (id) => document.getElementById(id);
 
-const apiBadge = document.getElementById("apiBadge");
-const statusLabel = document.getElementById("statusLabel");
+const state = {
+  seoTitles: [],
+  metaDescriptions: []
+};
 
-const openApiSettingsBtn = document.getElementById("openApiSettingsBtn");
-const closeApiSettingsBtn = document.getElementById("closeApiSettingsBtn");
-const apiModal = document.getElementById("apiModal");
-const apiModalStatus = document.getElementById("apiModalStatus");
-const apiKeyInput = document.getElementById("apiKeyInput");
-const showApiKeyCheckbox = document.getElementById("showApiKeyCheckbox");
-const testApiKeyBtn = document.getElementById("testApiKeyBtn");
-const saveApiKeyBtn = document.getElementById("saveApiKeyBtn");
-const clearApiKeyBtn = document.getElementById("clearApiKeyBtn");
-
-// Tabs
-const tabButtons = document.querySelectorAll(".tab-btn");
-const tabPanels = document.querySelectorAll(".tab-panel");
-
-// SEO tab
-const articleInput = document.getElementById("articleInput");
-const generateSeoBtn = document.getElementById("generateSeoBtn");
-const clearSeoBtn = document.getElementById("clearSeoBtn");
-const copyInputBtn = document.getElementById("copyInputBtn");
-const copyAllSeoBtn = document.getElementById("copyAllSeoBtn");
-const copySeoOutputBtn = document.getElementById("copySeoOutputBtn");
-
-const focusKeyphrase = document.getElementById("focusKeyphrase");
-const seoTitle = document.getElementById("seoTitle");
-const metaDescription = document.getElementById("metaDescription");
-const seoOutput = document.getElementById("seoOutput");
-const detectedEmbeds = document.getElementById("detectedEmbeds");
-const structureInfo = document.getElementById("structureInfo");
-const previewTitle = document.getElementById("previewTitle");
-const previewMeta = document.getElementById("previewMeta");
-const seoTitleCounter = document.getElementById("seoTitleCounter");
-const metaCounter = document.getElementById("metaCounter");
-
-// Image tab
-const imageInput = document.getElementById("imageInput");
-const sceneNotes = document.getElementById("sceneNotes");
-const generateImageSeoBtn = document.getElementById("generateImageSeoBtn");
-const clearImageBtn = document.getElementById("clearImageBtn");
-const imagePreview = document.getElementById("imagePreview");
-const imagePlaceholder = document.getElementById("imagePlaceholder");
-
-const altText = document.getElementById("altText");
-const imgTitle = document.getElementById("imgTitle");
-const caption = document.getElementById("caption");
-const copyAllImageBtn = document.getElementById("copyAllImageBtn");
-
-
-function getApiKey() {
-  return localStorage.getItem(STORAGE_KEY) || "";
+function setStatus(text, isError = false) {
+  const bar = $('statusBar');
+  bar.textContent = text;
+  bar.style.color = isError ? '#ef4444' : '#3d5a7a';
 }
 
-function setStatus(message, tone = "normal") {
-  statusLabel.textContent = message;
-  statusLabel.className = "";
-  if (tone) {
-    statusLabel.classList.add(tone);
-  }
+function updateBadge() {
+  const val = $('apiKey').value.trim();
+  $('apiBadge').textContent = val ? '● API key active' : '○ API not configured';
+  $('apiBadge').style.color = val ? '#22c55e' : '#4a6380';
 }
 
-function updateApiBadge() {
-  const apiKey = getApiKey();
-  if (apiKey) {
-    apiBadge.textContent = "● API key saved";
-    apiBadge.classList.remove("off");
-    apiBadge.classList.add("on");
-  } else {
-    apiBadge.textContent = "○ API not configured";
-    apiBadge.classList.remove("on");
-    apiBadge.classList.add("off");
-  }
+function switchTab(name) {
+  document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.tab === name));
+  document.querySelectorAll('.tab-panel').forEach(panel => panel.classList.toggle('active', panel.id === name));
 }
 
-function openApiModal() {
-  apiModal.classList.remove("hidden");
-  apiModal.setAttribute("aria-hidden", "false");
-  apiKeyInput.value = getApiKey();
-  apiModalStatus.textContent = apiKeyInput.value ? "Current key loaded." : "Paste your API key below.";
+function updateCounters() {
+  $('seoTitleCount').textContent = `${$('seoTitle').value.length} / 60`;
+  $('metaCount').textContent = `${$('metaDescription').value.trim().length} / 160`;
+  $('previewTitle').textContent = $('seoTitle').value.trim() || 'SEO Title will appear here';
+  $('previewMeta').textContent = $('metaDescription').value.trim() || 'Meta description preview will appear here.';
 }
 
-function closeApiModal() {
-  apiModal.classList.add("hidden");
-  apiModal.setAttribute("aria-hidden", "true");
-}
-
-function switchTab(tabId) {
-  tabButtons.forEach(btn => {
-    btn.classList.toggle("active", btn.dataset.tab === tabId);
-  });
-  tabPanels.forEach(panel => {
-    panel.classList.toggle("active", panel.id === tabId);
+function renderVariants(containerId, items, onClick) {
+  const box = $(containerId);
+  box.innerHTML = '';
+  items.forEach((item) => {
+    const div = document.createElement('div');
+    div.className = 'variant-item';
+    div.textContent = item;
+    div.addEventListener('click', () => onClick(item));
+    box.appendChild(div);
   });
 }
 
-async function copyText(value, successMsg = "Copied.") {
-  const text = String(value || "").trim();
-  if (!text) {
-    setStatus("Nothing to copy.", "warn");
+function renderEmbeds(items) {
+  const box = $('embedList');
+  box.innerHTML = '';
+  if (!items || !items.length) {
+    box.className = 'embed-list empty';
+    box.textContent = 'No embeds detected';
     return;
   }
-  try {
-    await navigator.clipboard.writeText(text);
-    setStatus(successMsg, "success");
-  } catch {
-    setStatus("Copy failed.", "error");
-  }
-}
-
-function updateSeoPreview() {
-  const title = (seoTitle.value || "").trim();
-  const meta = (metaDescription.value || "").trim();
-
-  previewTitle.textContent = title || "SEO Title will appear here";
-  previewMeta.textContent = meta || "Meta description will appear here.";
-
-  seoTitleCounter.textContent = `${title.length} / 60`;
-  metaCounter.textContent = `${meta.length} / 160`;
-
-  seoTitleCounter.className = "counter";
-  metaCounter.className = "counter";
-
-  if (title.length > 60) seoTitleCounter.classList.add("bad");
-  else if (title.length >= 50) seoTitleCounter.classList.add("good");
-  else if (title.length > 0) seoTitleCounter.classList.add("warn");
-
-  if (meta.length > 160) metaCounter.classList.add("bad");
-  else if (meta.length >= 120) metaCounter.classList.add("good");
-  else if (meta.length > 0) metaCounter.classList.add("warn");
-}
-
-async function testApiKey() {
-  const apiKey = apiKeyInput.value.trim();
-  if (!apiKey) {
-    apiModalStatus.textContent = "Paste API key first.";
-    return;
-  }
-
-  apiModalStatus.textContent = "Testing API key...";
-  try {
-    const res = await fetch("/api/test-key", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({ api_key: apiKey })
-    });
-    const data = await res.json();
-    apiModalStatus.textContent = data.message || (data.ok ? "API key is valid." : "API key test failed.");
-  } catch (err) {
-    apiModalStatus.textContent = err.message || "API key test failed.";
-  }
-}
-
-function saveApiKey() {
-  const apiKey = apiKeyInput.value.trim();
-  if (!apiKey) {
-    apiModalStatus.textContent = "API key is empty.";
-    return;
-  }
-  localStorage.setItem(STORAGE_KEY, apiKey);
-  updateApiBadge();
-  apiModalStatus.textContent = "API key saved in browser.";
-  setStatus("API key saved.", "success");
-}
-
-function clearApiKey() {
-  localStorage.removeItem(STORAGE_KEY);
-  apiKeyInput.value = "";
-  updateApiBadge();
-  apiModalStatus.textContent = "Saved API key cleared.";
-  setStatus("Saved API key cleared.", "warn");
-}
-
-async function generateSeo() {
-  const article = articleInput.value.trim();
-  if (!article) {
-    setStatus("Paste article input first.", "error");
-    return;
-  }
-
-  generateSeoBtn.disabled = true;
-  setStatus("Generating SEO...", "normal");
-
-  try {
-    const res = await fetch("/api/generate-seo", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        article,
-        api_key: getApiKey()
-      })
-    });
-
-    const data = await res.json();
-    if (!res.ok || !data.ok) {
-      throw new Error(data.error || "Failed to generate SEO.");
-    }
-
-    focusKeyphrase.value = data.focus_keyphrase || "";
-    seoTitle.value = data.seo_title || "";
-    metaDescription.value = data.meta_description || "";
-    detectedEmbeds.value = data.detected_embeds || "";
-    seoOutput.value = data.seo_output || "";
-    structureInfo.value = data.structure || "";
-
-    updateSeoPreview();
-    setStatus("SEO generated successfully.", "success");
-  } catch (err) {
-    setStatus(err.message || "Unexpected error.", "error");
-  } finally {
-    generateSeoBtn.disabled = false;
-  }
+  box.className = 'embed-list';
+  items.forEach((item) => {
+    const row = document.createElement('div');
+    row.className = 'embed-item';
+    row.innerHTML = `<div class="embed-type">${item.type}</div><div>${item.label || item.type}</div><a href="${item.url}" target="_blank" rel="noopener">${item.url}</a>`;
+    box.appendChild(row);
+  });
 }
 
 function clearSeo() {
-  articleInput.value = "";
-  focusKeyphrase.value = "";
-  seoTitle.value = "";
-  metaDescription.value = "";
-  detectedEmbeds.value = "";
-  seoOutput.value = "";
-  structureInfo.value = "";
-  updateSeoPreview();
-  setStatus("SEO fields cleared.", "warn");
+  ['articleUrl','articleHtml','articleText','focusKeyphrase','seoTitle','metaDescription','slug','excerpt','tags','cleanArticle','wpHtml'].forEach(id => $(id).value = '');
+  renderEmbeds([]);
+  $('seoVariants').innerHTML = '';
+  $('metaVariants').innerHTML = '';
+  updateCounters();
+  setStatus('Cleared SEO fields');
 }
 
-function previewSelectedImage() {
-  const file = imageInput.files && imageInput.files[0];
-  if (!file) {
-    imagePreview.src = "";
-    imagePreview.classList.add("hidden");
-    imagePlaceholder.classList.remove("hidden");
-    return;
+async function generateSeo() {
+  setStatus('Generating SEO...');
+  try {
+    const res = await fetch('/api/generate-seo', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        api_key: $('apiKey').value.trim(),
+        article_url: $('articleUrl').value.trim(),
+        article_html: $('articleHtml').value,
+        article_text: $('articleText').value
+      })
+    });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || 'Request failed');
+    const d = data.data;
+    $('focusKeyphrase').value = d.focus_keyphrase || '';
+    $('seoTitle').value = d.seo_title || '';
+    $('metaDescription').value = d.meta_description || '';
+    $('slug').value = d.slug || '';
+    $('excerpt').value = d.excerpt || '';
+    $('tags').value = d.tags || '';
+    $('cleanArticle').value = d.clean_article || '';
+    $('wpHtml').value = d.wp_html || '';
+    state.seoTitles = [d.seo_title].filter(Boolean);
+    state.metaDescriptions = [d.meta_description].filter(Boolean);
+    renderVariants('seoVariants', state.seoTitles, (value) => { $('seoTitle').value = value; updateCounters(); });
+    renderVariants('metaVariants', state.metaDescriptions, (value) => { $('metaDescription').value = value; updateCounters(); });
+    renderEmbeds(d.embeds || []);
+    updateCounters();
+    setStatus('SEO generated successfully');
+  } catch (err) {
+    setStatus(err.message, true);
   }
+}
 
-  const reader = new FileReader();
-  reader.onload = () => {
-    imagePreview.src = reader.result;
-    imagePreview.classList.remove("hidden");
-    imagePlaceholder.classList.add("hidden");
-  };
-  reader.readAsDataURL(file);
+async function generateAiFields() {
+  setStatus('Generating AI SEO fields...');
+  try {
+    const res = await fetch('/api/ai-fields', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        api_key: $('apiKey').value.trim(),
+        article_text: $('articleText').value || $('cleanArticle').value,
+        title: $('seoTitle').value
+      })
+    });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || 'Request failed');
+    $('focusKeyphrase').value = data.data.focus_keyphrase || '';
+    state.seoTitles = data.data.seo_titles || [];
+    state.metaDescriptions = data.data.meta_descriptions || [];
+    if (state.seoTitles[0]) $('seoTitle').value = state.seoTitles[0];
+    if (state.metaDescriptions[0]) $('metaDescription').value = state.metaDescriptions[0];
+    renderVariants('seoVariants', state.seoTitles, (value) => { $('seoTitle').value = value; updateCounters(); });
+    renderVariants('metaVariants', state.metaDescriptions, (value) => { $('metaDescription').value = value; updateCounters(); });
+    updateCounters();
+    setStatus('AI SEO fields ready');
+  } catch (err) {
+    setStatus(err.message, true);
+  }
+}
+
+function clearImage() {
+  $('imageFile').value = '';
+  $('sceneHint').value = '';
+  $('altText').value = '';
+  $('imgTitle').value = '';
+  $('imgCaption').value = '';
+  $('imagePreview').src = '';
+  $('imagePreview').classList.add('hidden');
+  $('imageEmpty').classList.remove('hidden');
+  setStatus('Cleared image SEO fields');
 }
 
 async function generateImageSeo() {
-  const file = imageInput.files && imageInput.files[0];
+  const file = $('imageFile').files[0];
   if (!file) {
-    setStatus("Upload image first.", "error");
+    setStatus('Please upload an image first', true);
     return;
   }
-
-  generateImageSeoBtn.disabled = true;
-  setStatus("Generating image SEO...", "normal");
-
+  setStatus('Generating image SEO...');
   try {
-    const formData = new FormData();
-    formData.append("image", file);
-    formData.append("scene_notes", sceneNotes.value.trim());
-    formData.append("api_key", getApiKey());
-
-    const res = await fetch("/api/generate-image-seo", {
-      method: "POST",
-      body: formData
-    });
-
+    const form = new FormData();
+    form.append('api_key', $('apiKey').value.trim());
+    form.append('scene_hint', $('sceneHint').value.trim());
+    form.append('image', file);
+    const res = await fetch('/api/image-seo', { method: 'POST', body: form });
     const data = await res.json();
-    if (!res.ok || !data.ok) {
-      throw new Error(data.error || "Failed to generate image SEO.");
-    }
-
-    altText.value = data.alt_text || "";
-    imgTitle.value = data.img_title || "";
-    caption.value = data.caption || "";
-
-    setStatus("Image SEO generated successfully.", "success");
+    if (!data.ok) throw new Error(data.error || 'Request failed');
+    $('altText').value = data.data.alt_text || '';
+    $('imgTitle').value = data.data.img_title || '';
+    $('imgCaption').value = data.data.caption || '';
+    setStatus('Image SEO generated successfully');
   } catch (err) {
-    setStatus(err.message || "Unexpected error.", "error");
-  } finally {
-    generateImageSeoBtn.disabled = false;
+    setStatus(err.message, true);
   }
 }
 
-function clearImageSeo() {
-  imageInput.value = "";
-  sceneNotes.value = "";
-  altText.value = "";
-  imgTitle.value = "";
-  caption.value = "";
-  imagePreview.src = "";
-  imagePreview.classList.add("hidden");
-  imagePlaceholder.classList.remove("hidden");
-  setStatus("Image SEO fields cleared.", "warn");
+function previewImage() {
+  const file = $('imageFile').files[0];
+  if (!file) return clearImage();
+  const url = URL.createObjectURL(file);
+  $('imagePreview').src = url;
+  $('imagePreview').classList.remove('hidden');
+  $('imageEmpty').classList.add('hidden');
 }
 
-function copyAllSeoFields() {
-  const parts = [
-    `Focus Keyphrase: ${focusKeyphrase.value || ""}`,
-    `SEO Title: ${seoTitle.value || ""}`,
-    `Meta Description: ${metaDescription.value || ""}`
-  ];
-  copyText(parts.join("\n"), "All SEO fields copied.");
-}
+document.querySelectorAll('.tab-btn').forEach(btn => btn.addEventListener('click', () => switchTab(btn.dataset.tab)));
+$('apiKey').addEventListener('input', updateBadge);
+$('seoTitle').addEventListener('input', updateCounters);
+$('metaDescription').addEventListener('input', updateCounters);
+$('generateBtn').addEventListener('click', generateSeo);
+$('aiFieldsBtn').addEventListener('click', generateAiFields);
+$('clearSeoBtn').addEventListener('click', clearSeo);
+$('generateImageSeoBtn').addEventListener('click', generateImageSeo);
+$('clearImageBtn').addEventListener('click', clearImage);
+$('imageFile').addEventListener('change', previewImage);
 
-function copyAllImageFields() {
-  const parts = [
-    `Alt Text: ${altText.value || ""}`,
-    `Image Title: ${imgTitle.value || ""}`,
-    `Caption: ${caption.value || ""}`
-  ];
-  copyText(parts.join("\n"), "All image fields copied.");
-}
-
-
-// Event wiring
-openApiSettingsBtn.addEventListener("click", openApiModal);
-closeApiSettingsBtn.addEventListener("click", closeApiModal);
-testApiKeyBtn.addEventListener("click", testApiKey);
-saveApiKeyBtn.addEventListener("click", saveApiKey);
-clearApiKeyBtn.addEventListener("click", clearApiKey);
-
-showApiKeyCheckbox.addEventListener("change", () => {
-  apiKeyInput.type = showApiKeyCheckbox.checked ? "text" : "password";
-});
-
-apiModal.addEventListener("click", (e) => {
-  if (e.target === apiModal) closeApiModal();
-});
-
-tabButtons.forEach(btn => {
-  btn.addEventListener("click", () => switchTab(btn.dataset.tab));
-});
-
-generateSeoBtn.addEventListener("click", generateSeo);
-clearSeoBtn.addEventListener("click", clearSeo);
-copyInputBtn.addEventListener("click", () => copyText(articleInput.value, "Input copied."));
-copyAllSeoBtn.addEventListener("click", copyAllSeoFields);
-copySeoOutputBtn.addEventListener("click", () => copyText(seoOutput.value, "SEO output copied."));
-
-imageInput.addEventListener("change", previewSelectedImage);
-generateImageSeoBtn.addEventListener("click", generateImageSeo);
-clearImageBtn.addEventListener("click", clearImageSeo);
-copyAllImageBtn.addEventListener("click", copyAllImageFields);
-
-document.querySelectorAll("[data-copy-target]").forEach(btn => {
-  btn.addEventListener("click", () => {
-    const id = btn.getAttribute("data-copy-target");
-    const el = document.getElementById(id);
-    if (!el) return;
-    copyText(el.value, `${id} copied.`);
-  });
-});
-
-// Init
-updateApiBadge();
-updateSeoPreview();
-previewSelectedImage();
+updateBadge();
+updateCounters();
