@@ -1,147 +1,283 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>WordPress SEO Studio</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{{ app_title }}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
 </head>
 <body>
   <div class="app-shell">
+    <!-- Topbar -->
     <header class="topbar">
-      <div>
-        <div class="brand">WordPress SEO Studio</div>
-        <div class="subtitle">SEO Formatter · Image Crop · AI Image SEO · Yoast Fields · AI SEO Fields</div>
+      <div class="brand-wrap">
+        <div class="brand-title">WordPress SEO Studio</div>
+        <div class="brand-subtitle">SEO Formatter · Image Crop · AI Image SEO · Yoast Fields · AI SEO Fields</div>
       </div>
+
       <div class="topbar-right">
-        <span id="apiBadge" class="badge">○ API not configured</span>
-        <input id="apiKey" class="api-input" type="password" placeholder="Together AI API key">
+        <div id="apiBadge" class="api-badge badge-off">○ API not configured</div>
+        <button id="openApiModalBtn" class="btn btn-cyan small">⚙ API Settings</button>
       </div>
     </header>
 
-    <div class="tabbar">
-      <button class="tab-btn active" data-tab="seoTab">📝 SEO Formatter</button>
-      <button class="tab-btn" data-tab="imageTab">🖼 Image SEO</button>
-    </div>
+    <!-- Tabs -->
+    <main class="workspace">
+      <div class="tab-header">
+        <button class="tab-btn active" data-tab="seoTab">📝 SEO Formatter</button>
+        <button class="tab-btn" data-tab="imageTab">🖼 Image SEO</button>
+      </div>
 
-    <main class="main-grid">
-      <section id="seoTab" class="tab-panel active">
-        <div class="toolbar card">
-          <button id="generateBtn" class="btn blue">Generate SEO</button>
-          <button id="aiFieldsBtn" class="btn purple">AI SEO Fields</button>
-          <button id="clearSeoBtn" class="btn red">Clear</button>
+      <!-- SEO TAB -->
+      <section id="seoTab" class="tab-page active">
+        <div class="action-bar panel panel-tight">
+          <div class="action-row">
+            <button id="fetchGenerateBtn" class="btn btn-purple">⬇ Fetch &amp; Generate</button>
+            <button id="generateSeoBtn" class="btn btn-green">⚡ Generate SEO</button>
+            <button id="copySeoOutputBtn" class="btn btn-teal">⧉ Copy SEO Output</button>
+            <button id="copyWpOutputBtn" class="btn btn-blue">⧉ Copy WP HTML</button>
+            <button id="clearSeoBtn" class="btn btn-red">✕ Clear</button>
+          </div>
         </div>
 
-        <div class="seo-layout">
-          <div class="card panel">
-            <div class="panel-title">Input</div>
-            <label>Article URL (optional)</label>
-            <input id="articleUrl" class="input" placeholder="https://example.com/article">
-
-            <label>WordPress HTML / Article HTML</label>
-            <textarea id="articleHtml" class="textarea tall" placeholder="Paste WordPress HTML with article + video embeds here"></textarea>
-
-            <label>Plain Article Text</label>
-            <textarea id="articleText" class="textarea medium" placeholder="Paste article text here"></textarea>
-          </div>
-
-          <div class="card panel">
-            <div class="panel-title">Yoast SEO Fields</div>
-            <label>Focus Keyphrase</label>
-            <input id="focusKeyphrase" class="input green-text" placeholder="Focus keyphrase">
-
-            <label>SEO Title</label>
-            <input id="seoTitle" class="input" placeholder="SEO title">
-            <div class="counter-row"><span>Recommended 50–60</span><span id="seoTitleCount">0 / 60</span></div>
-
-            <label>Meta Description</label>
-            <textarea id="metaDescription" class="textarea short" placeholder="Meta description"></textarea>
-            <div class="counter-row"><span>Recommended 120–160</span><span id="metaCount">0 / 160</span></div>
-
-            <div class="two-col">
+        <div class="seo-grid">
+          <!-- LEFT -->
+          <div class="panel panel-main">
+            <div class="section-header">
               <div>
-                <label>Slug</label>
-                <input id="slug" class="input" placeholder="slug">
-              </div>
-              <div>
-                <label>Tags</label>
-                <input id="tags" class="input" placeholder="tag1, tag2">
+                <div class="section-title">Article Input</div>
+                <div class="section-subtitle">Paste plain article, WordPress HTML, or use Article URL.</div>
               </div>
             </div>
 
-            <label>Excerpt</label>
-            <textarea id="excerpt" class="textarea short" placeholder="Excerpt"></textarea>
-          </div>
-        </div>
-
-        <div class="three-grid">
-          <div class="card panel">
-            <div class="panel-title">Clean Article</div>
-            <textarea id="cleanArticle" class="textarea output"></textarea>
-          </div>
-          <div class="card panel">
-            <div class="panel-title">WordPress HTML Output</div>
-            <textarea id="wpHtml" class="textarea output"></textarea>
-          </div>
-          <div class="card panel">
-            <div class="panel-title">Embed / Media Detected</div>
-            <div id="embedList" class="embed-list empty">No embeds yet</div>
-          </div>
-        </div>
-
-        <div class="card panel">
-          <div class="panel-title">Google Preview</div>
-          <div class="preview-box">
-            <div class="preview-url">yoursite.com › article</div>
-            <div id="previewTitle" class="preview-title">SEO Title will appear here</div>
-            <div id="previewMeta" class="preview-meta">Meta description preview will appear here.</div>
-          </div>
-          <div class="variant-wrap">
-            <div>
-              <div class="mini-title">SEO Title Variants</div>
-              <div id="seoVariants" class="variant-list"></div>
+            <div class="field-block">
+              <label class="field-label">Article URL</label>
+              <input type="text" id="articleUrl" class="ui-input" placeholder="https://example.com/article-url" />
             </div>
-            <div>
-              <div class="mini-title">Meta Variants</div>
-              <div id="metaVariants" class="variant-list"></div>
+
+            <div class="field-block">
+              <label class="field-label">Article / WordPress HTML Input</label>
+              <textarea id="rawInput" class="ui-textarea input-large" placeholder="Paste article text, WordPress HTML, Gutenberg content, or article source here..."></textarea>
+            </div>
+
+            <div class="sub-toolbar">
+              <button id="copyInputBtn" class="btn btn-cyan small">⧉ Copy Input</button>
+              <button id="pasteSampleBtn" class="btn btn-blue small">Sample</button>
+            </div>
+
+            <div class="field-block">
+              <label class="field-label">Live Plain Preview</label>
+              <textarea id="plainPreview" class="ui-textarea output-mid readonly" readonly></textarea>
+            </div>
+          </div>
+
+          <!-- RIGHT -->
+          <div class="panel-stack">
+            <div class="panel panel-side">
+              <div class="section-title">Yoast SEO Fields</div>
+
+              <div class="field-grid">
+                <div class="field-block">
+                  <label class="field-label">Focus Keyphrase</label>
+                  <div class="inline-copy">
+                    <input type="text" id="focusKeyphrase" class="ui-input" />
+                    <button class="mini-copy" data-copy-target="focusKeyphrase">⧉</button>
+                  </div>
+                </div>
+
+                <div class="field-block">
+                  <label class="field-label">SEO Title</label>
+                  <div class="inline-copy">
+                    <input type="text" id="seoTitle" class="ui-input" />
+                    <button class="mini-copy" data-copy-target="seoTitle">⧉</button>
+                  </div>
+                  <div class="char-meter">
+                    <div class="char-meta">
+                      <span id="seoTitleCount">0 / 60</span>
+                      <span id="seoTitleHint">—</span>
+                    </div>
+                    <div class="meter-track"><div id="seoTitleBar" class="meter-fill"></div></div>
+                  </div>
+                </div>
+
+                <div class="field-block">
+                  <label class="field-label">Meta Description</label>
+                  <textarea id="metaDescription" class="ui-textarea meta-box"></textarea>
+                  <div class="char-meter">
+                    <div class="char-meta">
+                      <span id="metaDescCount">0 / 160</span>
+                      <span id="metaDescHint">—</span>
+                    </div>
+                    <div class="meter-track"><div id="metaDescBar" class="meter-fill"></div></div>
+                  </div>
+                </div>
+
+                <div class="field-block">
+                  <label class="field-label">Slug</label>
+                  <div class="inline-copy">
+                    <input type="text" id="slugField" class="ui-input" />
+                    <button class="mini-copy" data-copy-target="slugField">⧉</button>
+                  </div>
+                </div>
+              </div>
+
+              <div class="sub-toolbar">
+                <button id="aiFieldsBtn" class="btn btn-purple small">⚡ AI Generate Fields</button>
+                <button id="copyAllFieldsBtn" class="btn btn-teal small">⧉ Copy All Fields</button>
+              </div>
+            </div>
+
+            <div class="panel panel-side">
+              <div class="section-title">Google Search Preview</div>
+              <div class="google-card">
+                <div class="google-url">🌐 yoursite.com › article</div>
+                <div id="googleTitle" class="google-title">SEO Title will appear here</div>
+                <div id="googleMeta" class="google-meta">Meta description will appear here...</div>
+              </div>
+            </div>
+
+            <div class="panel panel-side">
+              <div class="section-title">SEO Output</div>
+              <textarea id="seoOutput" class="ui-textarea output-tall readonly" readonly></textarea>
+            </div>
+
+            <div class="panel panel-side">
+              <div class="section-title">WordPress HTML Output</div>
+              <textarea id="wpHtmlOutput" class="ui-textarea output-tall readonly" readonly></textarea>
             </div>
           </div>
         </div>
       </section>
 
-      <section id="imageTab" class="tab-panel">
-        <div class="toolbar card">
-          <button id="generateImageSeoBtn" class="btn blue">Generate Image SEO</button>
-          <button id="clearImageBtn" class="btn red">Clear</button>
+      <!-- IMAGE TAB -->
+      <section id="imageTab" class="tab-page">
+        <div class="action-bar panel panel-tight">
+          <div class="action-row">
+            <label class="btn btn-purple file-btn">
+              ⬆ Upload Image
+              <input type="file" id="imageFile" accept="image/*" hidden />
+            </label>
+            <button id="generateImageSeoBtn" class="btn btn-green">⚡ Generate SEO</button>
+            <button id="copyAllImageSeoBtn" class="btn btn-teal">⧉ Copy All SEO</button>
+            <button id="clearImageBtn" class="btn btn-red">✕ Clear</button>
+          </div>
         </div>
 
-        <div class="image-layout">
-          <div class="card panel">
-            <div class="panel-title">Image Input</div>
-            <label>Upload Image</label>
-            <input id="imageFile" class="input file-input" type="file" accept="image/*">
-            <label>Scene / Keyword Hint</label>
-            <textarea id="sceneHint" class="textarea short" placeholder="Optional context from your article/editor"></textarea>
-            <div class="image-preview-wrap">
-              <img id="imagePreview" class="image-preview hidden" alt="Preview">
-              <div id="imageEmpty" class="image-empty">No image loaded</div>
+        <div class="image-grid">
+          <!-- Crop/Preview panel -->
+          <div class="panel panel-main">
+            <div class="crop-toolbar">
+              <button class="btn btn-blue tiny preset-btn active" data-ratio="1200x366">1200×366</button>
+              <button class="btn btn-blue tiny preset-btn" data-ratio="800x445">800×445</button>
+              <button class="btn btn-blue tiny preset-btn" data-ratio="1x1">1:1</button>
+              <button class="btn btn-blue tiny preset-btn" data-ratio="16x9">16:9</button>
+              <button class="btn btn-blue tiny preset-btn" data-ratio="4x3">4:3</button>
+
+              <label class="switch-wrap">
+                <input type="checkbox" id="lockRatio" checked />
+                <span>Lock Ratio</span>
+              </label>
+
+              <label class="switch-wrap">
+                <input type="checkbox" id="safeZone" checked />
+                <span>Safe Zone</span>
+              </label>
+
+              <label class="zoom-wrap">
+                <span>Zoom</span>
+                <input type="range" id="zoomRange" min="1" max="2.5" step="0.01" value="1" />
+              </label>
+            </div>
+
+            <div class="canvas-wrap">
+              <div class="canvas-frame">
+                <img id="imagePreview" class="image-preview hidden" alt="Preview" />
+                <div id="canvasPlaceholder" class="canvas-placeholder">
+                  Upload image to preview crop area
+                </div>
+                <div id="safeZoneOverlay" class="safe-zone"></div>
+              </div>
+            </div>
+
+            <div class="image-info-bar">
+              <span id="imageInfoText">Visible: 0% - 100%</span>
+              <span id="imageSizeText">No image</span>
             </div>
           </div>
 
-          <div class="card panel">
-            <div class="panel-title">WordPress Image SEO</div>
-            <label>Alt Text</label>
-            <textarea id="altText" class="textarea short"></textarea>
-            <label>Image Title</label>
-            <input id="imgTitle" class="input" placeholder="Image title">
-            <label>Caption</label>
-            <textarea id="imgCaption" class="textarea medium"></textarea>
+          <!-- SEO fields -->
+          <div class="panel panel-side">
+            <div class="section-title">Image SEO Fields</div>
+
+            <div class="field-block">
+              <label class="field-label">SEO Title</label>
+              <div class="inline-copy">
+                <input type="text" id="imgSeoTitle" class="ui-input" />
+                <button class="mini-copy" data-copy-target="imgSeoTitle">⧉</button>
+              </div>
+            </div>
+
+            <div class="field-block">
+              <label class="field-label">Alt Text</label>
+              <textarea id="imgAltText" class="ui-textarea small-box"></textarea>
+            </div>
+
+            <div class="field-block">
+              <label class="field-label">Caption</label>
+              <textarea id="imgCaption" class="ui-textarea small-box"></textarea>
+            </div>
+
+            <div class="field-block">
+              <label class="field-label">Description</label>
+              <textarea id="imgDescription" class="ui-textarea mid-box"></textarea>
+            </div>
+
+            <div class="field-block">
+              <label class="field-label">Slug</label>
+              <div class="inline-copy">
+                <input type="text" id="imgSlug" class="ui-input" />
+                <button class="mini-copy" data-copy-target="imgSlug">⧉</button>
+              </div>
+            </div>
           </div>
         </div>
       </section>
     </main>
 
-    <footer id="statusBar" class="statusbar">Ready</footer>
+    <!-- Bottom status -->
+    <footer class="statusbar">
+      <div id="statusText">Ready</div>
+    </footer>
+  </div>
+
+  <!-- API MODAL -->
+  <div id="apiModal" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-title">Together AI — API Settings</div>
+      <div class="modal-subtitle">Key is hidden, tested before use.</div>
+
+      <div class="field-block">
+        <label class="field-label">API Key</label>
+        <input type="password" id="apiKeyInput" class="ui-input" placeholder="Paste Together API key here..." />
+      </div>
+
+      <div class="modal-options">
+        <label class="switch-wrap">
+          <input type="checkbox" id="showApiKey" />
+          <span>Show key</span>
+        </label>
+      </div>
+
+      <div class="modal-actions">
+        <button id="testApiKeyBtn" class="btn btn-cyan">Test Key</button>
+        <button id="saveApiKeyBtn" class="btn btn-green">Save &amp; Use</button>
+        <button id="sessionApiKeyBtn" class="btn btn-blue">Session Only</button>
+        <button id="clearApiKeyBtn" class="btn btn-red">Clear Saved Key</button>
+      </div>
+
+      <div id="apiModalStatus" class="modal-status">Paste your Together AI key below</div>
+      <button id="closeApiModalBtn" class="modal-close">✕</button>
+    </div>
   </div>
 
   <script src="{{ url_for('static', filename='script.js') }}"></script>
